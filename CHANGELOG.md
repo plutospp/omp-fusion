@@ -14,6 +14,16 @@ All notable changes to fusion-omp. Format loosely follows Keep a Changelog.
   OMP-native; pi install works but fan-out is experimental).
 - SKILL.md gains a "Plugin mode — no custom agents" recipe (task-agent fan-out with inlined panel/judge
   prompts).
+- **Robustness** (from a review of `synthetic-recon/pi-fusion`): empty/whitespace-only or budget-capped
+  panelist answers are treated as failures and excluded from the judge; if fewer than two panelists
+  succeed the judge is skipped and the single answer is returned with a degradation note; panel answers
+  are truncated to fit the judge's context window; Track A panelists default to read-only / isolated
+  scratch dirs to avoid parallel-write collisions.
+- Optional **`--analysis-only`** judge mode: the judge emits only the structured analysis JSON and the
+  active/session model writes the final answer (OpenRouter-Fusion shape); default stays judge-writes-final.
+- `docs/CROSS-COMPAT.md` now cites **`synthetic-recon/pi-fusion`** (npm, MIT) as the proven pi-native
+  reference extension (panel→judge via pi's `ModelRegistry` + a concurrency limiter); pi users can
+  `pi install npm:pi-fusion` while `fusion-omp` stays the OMP-native skill.
 
 ### Changed
 - `docs/PR-TO-OH-MY-PI.md` rewritten to the **verified OMP reality** — removed the Claude-Code

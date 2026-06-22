@@ -24,6 +24,10 @@ This is an OMP-native port of [duolahypercho/fusion-fable](https://github.com/du
   `modelRoles` (or a per-invocation override) — like how `/advisor`'s model is configured. No CLI
   wrappers (`run_codex`/`run_gemini`/`agy`), no hardcoded vendor or proxy.
 - **The judge is a separate subagent**, so its model is chosen independently of the session model.
+- **Robust by default.** Empty/failed panelist answers are dropped before the judge, and if fewer than
+  two real answers come back the judge is skipped (you get the single answer, flagged). Optional
+  **`--analysis-only`** mode flips the last step: the judge only analyzes and *your* active model writes
+  the final answer (the OpenRouter-Fusion shape).
 
 ## Install
 
@@ -76,7 +80,7 @@ Pro tier — authenticate `google-vertex` / `google-gemini-cli` if you want a Pr
 
 | Command | Panel |
 |---|---|
-| `/fusion <q>` | configured `fusion_panel_*` roles (or defaults); supports `--panel m1,m2,...` and `--judge m` |
+| `/fusion <q>` | configured `fusion_panel_*` roles (or defaults); `--panel m1,m2,...`, `--judge m`, `--analysis-only` |
 | `/fusion-solo <q>` | floor mode — `pi/slow` run **twice**, always available |
 | `/fusion-pair <q>` | two-model panel (`fusion_panel_1` + `_2`) |
 | `/fusion-trio <q>` | three-model panel (`fusion_panel_1..3`) |

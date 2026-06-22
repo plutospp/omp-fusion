@@ -176,6 +176,47 @@ Present the judge's final answer as the response. Lead with the answer/artifact;
 (consensus / contradictions / partial coverage / unique insights / blind spots) is the audit trail behind
 it, not a preamble.
 
+### Robustness & failure handling
+
+Apply these to every panel (default and plugin modes):
+
+- **Empty answer = failure.** A panelist whose text is blank/whitespace-only — or that burned its
+  tool-call / loop budget without producing a final answer — is a **failure**, not a blank success.
+  Drop it; never pass an empty "answer" to the judge.
+- **< 2 real answers → skip the judge.** If fewer than two panelists succeed there is nothing to
+  compare: return the single answer directly with a one-line note that the panel degraded (the judge
+  only adds value across ≥ 2 independent answers). This is distinct from `/fusion-solo`, which is two
+  cold runs of the *same* model — a real 2-panelist comparison.
+- **Guard the judge's context.** Before the judge, truncate each panel answer to roughly
+  `judge_context_window / (2 × N_successful)` bytes (append a `[truncated for judge]` marker). A large
+  panel of long answers can otherwise overflow the judge.
+- **Track A writes are isolated.** Artifact/code panelists default to **read-only** tools. If they must
+  write, give each its own scratch dir (or serialize them) — never let parallel panelists write to a
+  shared cwd, or they clobber each other.
+
+### Analysis-only mode (optional)
+
+Default Fusion has the **judge write the final answer** (it is the independent synthesizer — the
+DARPA-faithful path). Some users prefer the OpenRouter-Fusion shape: the judge only *analyzes*, and the
+**user's own active/session model writes the final answer** from that analysis. Enable it with
+`/fusion --analysis-only` (or prose: "analysis only", "let my model write the final answer").
+
+In this mode the judge returns **only** this JSON (no `final_answer`, no prose, no code fences):
+
+```json
+{
+  "consensus": ["points all/most panelists agree on — higher-confidence"],
+  "contradictions": [{ "topic": "...", "stances": [{ "model": "provider/id", "stance": "..." }] }],
+  "partial_coverage": [{ "models": ["provider/id"], "point": "..." }],
+  "unique_insights": [{ "model": "provider/id", "insight": "..." }],
+  "blind_spots": ["topics no panelist addressed"]
+}
+```
+
+Then **you (the orchestrator / session model) write the final answer** grounded in that analysis —
+prefer consensus, resolve contradictions on the evidence, fold in unique insights, and note blind spots.
+When the flag is absent, the default (separate judge writes the answer) is unchanged.
+
 ---
 
 ## 4. Invariants (do not break these)

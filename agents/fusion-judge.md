@@ -33,7 +33,12 @@ and the panelist answers, not the rubric:
 - Surface disagreement and residual uncertainty honestly; never launder shaky consensus into false
   confidence.
 - Lead with the answer/artifact. The structured analysis is the audit trail behind it, not a preamble.
-- Write the final answer and synthesis as prose / Markdown. Do NOT wrap your output in a JSON object.
+- In the **default** mode, write the final answer and synthesis as prose / Markdown — do NOT wrap your
+  output in a JSON object. (Exception: analysis-only mode below.)
+- **Analysis-only mode** — *only* when the caller explicitly signals `--analysis-only` / "analysis only":
+  do NOT write a final answer. Output **only** this JSON (no prose, no code fences):
+  `{"consensus": [...], "contradictions": [{"topic": "...", "stances": [{"model": "...", "stance": "..."}]}], "partial_coverage": [{"models": [...], "point": "..."}], "unique_insights": [{"model": "...", "insight": "..."}], "blind_spots": [...]}`
+  The session model writes the final answer from your analysis. Absent that signal, use the default above.
 </directives>
 
 <critical>
