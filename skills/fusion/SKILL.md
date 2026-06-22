@@ -103,6 +103,50 @@ Notes:
   fixes one model per agent *type*, so it cannot vary models within a single call.
 - Never inject panelist answers back into other panelists. No debate rounds. One blind pass.
 
+### Plugin mode — no custom agents (`omp plugin` installs)
+
+When Fusion is installed as an OMP **plugin** (`omp plugin link`/`install`), only `skills/` and
+`commands/` are discovered — the `fusion-panel`/`fusion-judge` agents are **not** (OMP doesn't discover
+`agents/` from a plugin surface). Use the bundled **`task`** agent and carry the panelist brief + judge
+rubric in the prompt. Same independence + synthesis; zero custom-agent dependency.
+
+```js
+const task = `<<<VERBATIM USER TASK>>>`;
+const panel = ["pi/fusion_panel_1", "pi/fusion_panel_2", "pi/fusion_panel_3"];
+const judgeModel = "pi/fusion_judge";
+
+const panelBrief = [
+  "You are ONE independent panelist answering the task below entirely on your own.",
+  "You do not know whether anyone else is answering it; never reference other panelists or a synthesizer.",
+  "Answer completely and self-containedly; use web search + bash to verify. No personas/lenses.",
+  "Return ONLY your final answer (for artifacts, include how you verified them).",
+].join("\n");
+
+const judgeRubric = [
+  "You are the Fusion judge. You did not write these answers; do not vote or average.",
+  "First classify the deliverable. Artifact/code -> Track A: run each candidate with bash, keep the",
+  "working parts, merge into one artifact, run+fix it, give a brief merge rationale.",
+  "Research/analysis -> Track B: write Consensus / Contradictions / Partial coverage / Unique insights /",
+  "Blind spots, then the Final answer grounded in them. Lead with the answer, not a preamble.",
+].join("\n");
+
+// parallel + agent are async — await. The bundled `task` agent has full tools; model override wins.
+const answers = await parallel(
+  panel.map((m, i) => () => agent(`${panelBrief}\n\n=== TASK ===\n${task}`,
+    { agentType: "task", model: m, label: `panel ${i + 1}` })),
+);
+const judgeInput = [
+  judgeRubric,
+  `=== ORIGINAL TASK ===\n${task}`,
+  ...answers.map((a, i) => `=== PANELIST ${i + 1} (model: ${panel[i]}) ===\n${a}`),
+].join("\n\n");
+const verdict = await agent(judgeInput, { agentType: "task", model: judgeModel });
+display(verdict);
+```
+
+The fuller canonical prompts live in `agents/fusion-panel.md` + `references/judge_rubric.md`; the inlined
+briefs above are the self-contained no-agent path. Cross-harness notes: `docs/CROSS-COMPAT.md`.
+
 ---
 
 ## 3. Judge (separate subagent) → final answer

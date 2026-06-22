@@ -1,0 +1,45 @@
+{
+  "name": "fusion-omp",
+  "version": "0.1.0",
+  "description": "Fusion — run a hard question through an independent parallel model panel, then a judge synthesizes. An OMP skill + slash commands (installs on vanilla pi too; parallel fan-out is OMP-native).",
+  "keywords": [
+    "omp",
+    "pi",
+    "oh-my-pi",
+    "pi-coding-agent",
+    "fusion",
+    "ensemble",
+    "multi-model",
+    "panel",
+    "judge",
+    "skill",
+    "agent"
+  ],
+  "license": "MIT",
+  "author": "Jordan Strauss",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jms830/fusion-omp.git"
+  },
+  "omp": {
+    "name": "fusion",
+    "description": "Independent parallel model panel -> judge synthesis. Ships the fusion skill + /fusion[-solo|-pair|-trio] commands. Uses the bundled `task` agent in plugin mode, so no custom-agent install is required. Configure panel/judge via modelRoles (fusion_panel_*/fusion_judge)."
+  },
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
+  "files": [
+    "skills",
+    "commands",
+    "agents",
+    "scripts",
+    "docs",
+    "install.sh",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
+  ]
+}
