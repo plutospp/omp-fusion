@@ -61,7 +61,7 @@ modelRoles:
   fusion_judge:   anthropic/claude-opus-4-8:high
   fusion_panel_1: anthropic/claude-opus-4-8:high
   fusion_panel_2: openai-codex/gpt-5.5:high
-  fusion_panel_3: google-antigravity/gemini-3.5-pro
+  fusion_panel_3: google-antigravity/gemini-3.5-flash   # antigravity serves flash; a Pro tier needs google-vertex / google-gemini-cli auth
 ```
 
 Resolve role aliases yourself by passing the `pi/<role>` string as the subagent `model` — OMP resolves
@@ -72,63 +72,53 @@ a vendor or a proxy; whatever the user configured is the panel.
 
 ## 2. Fan out the panel (parallel, independent)
 
-Give every panelist the **verbatim user task** plus a short brief that keeps it independent. Spawn all
-panelists in ONE wave so they run at once.
+Give every panelist the **verbatim user task**. The `fusion-panel` agent's own system prompt already
+enforces independence (no awareness of other panelists, no personas/lenses), so you only supply the task.
+Spawn all panelists in ONE wave so they run at once.
 
 Canonical mechanism — the `eval` tool (deterministic fan-out via `parallel` + `agent`):
 
 ```js
-// task = the verbatim user question/instruction (no edits, no added "lenses")
+// task = the verbatim user question/instruction (substitute it; no edits, no added "lenses")
 const task = `<<<VERBATIM USER TASK>>>`;
 
-// models resolved per section 1 (override → command → roles → defaults); >=2 entries
+// models resolved per section 1 (override → command → roles → defaults); >= 2 entries
 const panel = ["pi/fusion_panel_1", "pi/fusion_panel_2", "pi/fusion_panel_3"];
 const judgeModel = "pi/fusion_judge";
 
-const brief = [
-  "You are ONE independent panelist answering the task below entirely on your own.",
-  "You do not know whether anyone else is answering it; never reference other panelists or a synthesizer.",
-  "Answer completely and self-containedly. Use every tool you have (web search, bash) to verify claims.",
-  "Artifact/code task: produce a COMPLETE working artifact and state exactly how you verified it",
-  "  (commands you ran and what they output).",
-  "Research/analysis task: give a direct, well-reasoned answer with evidence; flag your key uncertainties.",
-  "Do not hedge by deferring to a judge. Return ONLY your final answer.",
-].join("\n");
-
-const panelPrompt = `${brief}\n\n=== TASK ===\n${task}`;
-
-// one wave; order preserved; each returns that panelist's standalone answer
-const answers = parallel(
-  panel.map((m, i) => () => agent(panelPrompt, { agentType: "fusion-panel", model: m, label: `panel ${i + 1}` })),
+// `parallel` and `agent` are ASYNC — await them. agent() resolves to the subagent's final text.
+// The fusion-panel agent supplies the "independent panelist" framing; pass it the verbatim task.
+const answers = await parallel(
+  panel.map((m, i) => () => agent(task, { agentType: "fusion-panel", model: m, label: `panel ${i + 1}` })),
 );
 ```
 
 Notes:
-- The `model` you pass to `agent()` is authoritative for that panelist — that is how a single
-  `fusion-panel` agent yields a cross-model panel.
-- If `eval` is unavailable, achieve the same by issuing the panelist subagent calls in parallel through
-  the `task` tool, one model per call, in a single message. The independence + verbatim-prompt rules are
-  identical.
+- `parallel` and `agent` are **async — `await` them** (as above). `agent()` resolves to the subagent's
+  final text; `parallel` preserves input order.
+- The `model` passed to `agent()` is authoritative for that panelist (`modelOverride ?? agent.model`),
+  so a single `fusion-panel` agent yields a cross-model panel.
+- If `eval` is unavailable, define per-slot agent variants (e.g. `fusion-panel-b` / `-c`) that pin
+  different models in their frontmatter and run them in parallel via the `task` tool — the `task` tool
+  fixes one model per agent *type*, so it cannot vary models within a single call.
 - Never inject panelist answers back into other panelists. No debate rounds. One blind pass.
 
 ---
 
 ## 3. Judge (separate subagent) → final answer
 
-After all panelists return, hand the **original task** and **every panelist answer** to the judge. The
-judge follows `references/judge_rubric.md`. Read that file and pass its content as the judge's
-instructions, then the task, then each labeled answer:
+After all panelists return, hand the **original task** and **every panelist answer** to the judge. You do
+not need to pass the rubric text: the `fusion-judge` agent already carries the Track A / Track B rubric in
+its system prompt (`references/judge_rubric.md` is its canonical spec). Give it the task and each answer:
 
 ```js
-const rubric = `<<<contents of references/judge_rubric.md>>>`;
-
+// the fusion-judge agent carries the rubric; it only needs the task + every panelist answer.
 const judgeInput = [
-  rubric,
   `=== ORIGINAL TASK ===\n${task}`,
   ...answers.map((a, i) => `=== PANELIST ${i + 1} (model: ${panel[i]}) ===\n${a}`),
 ].join("\n\n");
 
-const verdict = agent(judgeInput, { agentType: "fusion-judge", model: judgeModel });
+const verdict = await agent(judgeInput, { agentType: "fusion-judge", model: judgeModel });
 display(verdict);
 ```
 

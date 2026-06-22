@@ -27,6 +27,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# never let an empty AGENT_DIR turn the rm -rf below into an absolute-path disaster
+[ -n "$AGENT_DIR" ] || { echo "error: agent dir resolved empty (check OMP_AGENT_DIR / --dir)" >&2; exit 1; }
+
 echo "Installing Fusion into: $AGENT_DIR"
 mkdir -p "$AGENT_DIR/skills" "$AGENT_DIR/agents" "$AGENT_DIR/commands"
 

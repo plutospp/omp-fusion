@@ -11,7 +11,8 @@ set -euo pipefail
 
 CONFIG="${1:-$HOME/.omp/agent/config.yml}"
 
-# read a modelRoles value by key from the config (best-effort; awk-based, no yq required)
+# read a modelRoles value by key from the config (best-effort; awk-based, no yq required).
+# Assumes ONE top-level `modelRoles:` block (reads the first match); overlay/profile configs may differ.
 role_value() {
   local key="$1"
   [ -f "$CONFIG" ] || return 0
@@ -31,7 +32,7 @@ role_value() {
   ' "$CONFIG"
 }
 
-provider_of() { printf '%s\n' "${1%%/*}"; }            # text before first '/'
+provider_of() { printf '%s\n' "${1%%/*}"; }  # provider prefix before first '/' (exact: openai != openai-codex)
 
 SLOW="$(role_value slow)";       SLOW="${SLOW:-anthropic/claude-opus-4-8:high}"
 DEFAULT="$(role_value default)"; DEFAULT="${DEFAULT:-openai-codex/gpt-5.5:high}"

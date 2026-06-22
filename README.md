@@ -48,11 +48,12 @@ modelRoles:
   fusion_judge:   anthropic/claude-opus-4-8:high
   fusion_panel_1: anthropic/claude-opus-4-8:high
   fusion_panel_2: openai-codex/gpt-5.5:high
-  fusion_panel_3: google-antigravity/gemini-3.5-pro
+  fusion_panel_3: google-antigravity/gemini-3.5-flash
 ```
 
 Any OMP model string or `pi/<role>` alias works (with optional `:thinking` suffix). Unavailable providers
-fall back via OMP's native provider fallback.
+fall back via OMP's native provider fallback. (Note: `google-antigravity` serves `gemini-3.5-flash`, not a
+Pro tier — authenticate `google-vertex` / `google-gemini-cli` if you want a Pro Gemini panelist.)
 
 ## Use
 
