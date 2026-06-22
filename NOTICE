@@ -1,0 +1,33 @@
+fusion-omp
+==========
+
+This project is an independent, OMP-native (oh-my-pi / `omp`) port of the
+**Fusion-Fable** Claude Code skill by duolahypercho:
+
+    https://github.com/duolahypercho/fusion-fable   (MIT)
+
+What is preserved from the original (the method, credited to duolahypercho):
+  - "independence, then synthesis": a panel of models answers the same prompt
+    in parallel, blind to one another, then a judge synthesizes.
+  - the judge classifies the deliverable and follows one of two tracks:
+      Track A — artifact: run, merge, verify
+      Track B — research: structured synthesis (consensus / contradictions /
+                partial coverage / unique insights / blind spots)
+  - no personas / "lenses"; the verbatim task goes to every panelist.
+
+What changed for OMP (this port):
+  - Panelists and the judge are ordinary OMP subagents (the `task`/`eval`
+    `agent()` path + custom `fusion-panel` / `fusion-judge` agents), not
+    Claude Code `Agent` subagents or external CLIs.
+  - No `run_codex.sh` / `run_gemini.sh` / `agy` shell runners and no
+    `command -v` CLI detection. Any provider/model is selectable through OMP's
+    native model resolution.
+  - Panel and judge models are configurable via `modelRoles`
+    (`fusion_panel_1..N`, `fusion_judge`) or a per-invocation `--panel`/
+    `--judge` override — the way `/advisor`'s model is configured — instead of
+    being pinned to specific model versions.
+  - The judge is a separate subagent with its own configurable model, so the
+    judge model is chosen independently of the session model.
+
+Original copyright (c) 2026 duolahypercho. Port copyright (c) 2026 Jordan Strauss.
+Both under the MIT License (see LICENSE).

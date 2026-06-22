@@ -1,0 +1,162 @@
+---
+name: fusion
+description: >-
+  Answer a hard question by fanning it out to a PANEL of models running in parallel — each answering
+  the SAME prompt independently with web search and bash, none seeing the others' work — then having a
+  JUDGE model read every answer and write a final answer grounded in a structured analysis (consensus,
+  contradictions, partial coverage, unique insights, blind spots). The panel and judge are ordinary OMP
+  subagents whose models are chosen from `modelRoles` (or a per-invocation override), so it runs on
+  whatever providers the user has configured. Floor mode runs the same model twice as two cold,
+  independent panelists. Use when the user says "run it through fusion", "panel of models", "fuse the
+  models", "get a second/third opinion in parallel", or asks a hard question that benefits from
+  independent cross-model corroboration before an answer is committed.
+---
+
+# Fusion — independence, then synthesis
+
+Fusion answers one hard question by running a **panel** of models in **parallel**, each answering the
+**same prompt independently** (web + bash, none seeing the others' work), then having a **judge** model
+read every answer and write a final answer grounded in a structured analysis.
+
+This is an **information-fusion** pipeline (fan-out → judge), *not* "ask several models and average."
+The value comes from two things and you must preserve both:
+
+1. **Independence.** Panelists answer the verbatim task with no awareness of each other, no assigned
+   "lenses"/personas, no shared scratchpad. Independent agreement is the highest-confidence signal;
+   honest disagreement is the most useful thing a panel produces. Two cold runs of the *same* model
+   are a valid panel — divergence comes from sampling, not from prompt-engineered roles.
+2. **Synthesis, not voting.** The judge does not tally or average. It classifies the deliverable, then
+   either merges-and-verifies an artifact (Track A) or writes a structured synthesis (Track B).
+
+The judge is a **separate subagent**, so its model is chosen independently of the session model — like
+`/advisor`, the judge model is configurable. The panel never sees the judge; the judge sees every
+panelist after all have returned.
+
+---
+
+## 1. Pick the panel and judge models
+
+Resolve models in this precedence (first that applies wins):
+
+1. **Explicit override** in the invocation:
+   `--panel <m1>,<m2>,...` and/or `--judge <m>` (models are OMP model strings or `pi/<role>` aliases,
+   each optionally suffixed with a thinking level, e.g. `:high`).
+2. **Pinned command** — if invoked via `/fusion-solo|pair|trio`, use that command's fixed panel
+   (see those command files).
+3. **Configured roles** in `~/.omp/agent/config.yml` → `modelRoles`:
+   - judge: `pi/fusion_judge`
+   - panel: `pi/fusion_panel_1`, `pi/fusion_panel_2`, `pi/fusion_panel_3` (use however many are set)
+4. **Defaults** when no roles are set:
+   - judge: `pi/slow`
+   - panel: `pi/slow` + `pi/default` (a 2-model cross-family panel using built-in roles)
+
+**Floor / always-available mode:** if only one usable model exists, run that model **twice** as two
+independent cold panelists (`/fusion-solo` does this with `pi/slow`). Never fall below two panelists.
+
+**Recommended `modelRoles` block** (cross-family panel; adjust to the providers the user actually has —
+`scripts/detect_panel.sh` prints a tailored suggestion):
+
+```yaml
+modelRoles:
+  fusion_judge:   anthropic/claude-opus-4-8:high
+  fusion_panel_1: anthropic/claude-opus-4-8:high
+  fusion_panel_2: openai-codex/gpt-5.5:high
+  fusion_panel_3: google-antigravity/gemini-3.5-pro
+```
+
+Resolve role aliases yourself by passing the `pi/<role>` string as the subagent `model` — OMP resolves
+the alias against `modelRoles` (and applies provider fallback if a provider is down). Do **not** hardcode
+a vendor or a proxy; whatever the user configured is the panel.
+
+---
+
+## 2. Fan out the panel (parallel, independent)
+
+Give every panelist the **verbatim user task** plus a short brief that keeps it independent. Spawn all
+panelists in ONE wave so they run at once.
+
+Canonical mechanism — the `eval` tool (deterministic fan-out via `parallel` + `agent`):
+
+```js
+// task = the verbatim user question/instruction (no edits, no added "lenses")
+const task = `<<<VERBATIM USER TASK>>>`;
+
+// models resolved per section 1 (override → command → roles → defaults); >=2 entries
+const panel = ["pi/fusion_panel_1", "pi/fusion_panel_2", "pi/fusion_panel_3"];
+const judgeModel = "pi/fusion_judge";
+
+const brief = [
+  "You are ONE independent panelist answering the task below entirely on your own.",
+  "You do not know whether anyone else is answering it; never reference other panelists or a synthesizer.",
+  "Answer completely and self-containedly. Use every tool you have (web search, bash) to verify claims.",
+  "Artifact/code task: produce a COMPLETE working artifact and state exactly how you verified it",
+  "  (commands you ran and what they output).",
+  "Research/analysis task: give a direct, well-reasoned answer with evidence; flag your key uncertainties.",
+  "Do not hedge by deferring to a judge. Return ONLY your final answer.",
+].join("\n");
+
+const panelPrompt = `${brief}\n\n=== TASK ===\n${task}`;
+
+// one wave; order preserved; each returns that panelist's standalone answer
+const answers = parallel(
+  panel.map((m, i) => () => agent(panelPrompt, { agentType: "fusion-panel", model: m, label: `panel ${i + 1}` })),
+);
+```
+
+Notes:
+- The `model` you pass to `agent()` is authoritative for that panelist — that is how a single
+  `fusion-panel` agent yields a cross-model panel.
+- If `eval` is unavailable, achieve the same by issuing the panelist subagent calls in parallel through
+  the `task` tool, one model per call, in a single message. The independence + verbatim-prompt rules are
+  identical.
+- Never inject panelist answers back into other panelists. No debate rounds. One blind pass.
+
+---
+
+## 3. Judge (separate subagent) → final answer
+
+After all panelists return, hand the **original task** and **every panelist answer** to the judge. The
+judge follows `references/judge_rubric.md`. Read that file and pass its content as the judge's
+instructions, then the task, then each labeled answer:
+
+```js
+const rubric = `<<<contents of references/judge_rubric.md>>>`;
+
+const judgeInput = [
+  rubric,
+  `=== ORIGINAL TASK ===\n${task}`,
+  ...answers.map((a, i) => `=== PANELIST ${i + 1} (model: ${panel[i]}) ===\n${a}`),
+].join("\n\n");
+
+const verdict = agent(judgeInput, { agentType: "fusion-judge", model: judgeModel });
+display(verdict);
+```
+
+The judge:
+- **does not vote or average.**
+- **first classifies the deliverable** → Track A (artifact: run, merge, verify) or Track B (research:
+  structured synthesis).
+- writes the **final answer** the user receives.
+
+Present the judge's final answer as the response. Lead with the answer/artifact; the structured analysis
+(consensus / contradictions / partial coverage / unique insights / blind spots) is the audit trail behind
+it, not a preamble.
+
+---
+
+## 4. Invariants (do not break these)
+
+- Same prompt to every panelist, **verbatim**. No personas, no "you are the optimist/pessimist", no
+  per-panelist lenses — unless the user explicitly asks for lensing.
+- Panelists are **blind** to each other and run in **parallel**.
+- The **judge is a separate model/subagent** from the panelists and synthesizes; it never just picks a
+  favorite or averages.
+- Never fewer than two panelists; the floor is the same model run twice.
+- Panel/judge models are **configurable** (roles + override). The fusion *method* is fixed; the *models*
+  are the user's choice.
+
+## 5. Optional provenance
+
+If the user wants a record, after presenting the answer write a timestamped run file to
+`.fusion/runs/<UTC-timestamp>.md` containing: the task, the panel + judge models used, each panelist
+answer, and the judge's synthesis. Skip silently otherwise.
