@@ -27,15 +27,32 @@ This is an OMP-native port of [duolahypercho/fusion-fable](https://github.com/du
 
 ## Install
 
+Each harness has its own vanilla install path. `install.sh` just wraps them.
+
+**OMP (recommended):**
+
 ```bash
-git clone <this-repo> ~/github/fusion-omp
+git clone https://github.com/jms830/fusion-omp ~/github/fusion-omp
 cd ~/github/fusion-omp
-./install.sh                 # installs into ~/.omp/agent (skills/, agents/, commands/)
-# ./install.sh --pi          # or into ~/.pi/agent (vanilla pi)
-# ./install.sh --dir <path>  # or a custom agent dir
+
+# vanilla OMP plugin — omp links the repo and auto-discovers skill + commands (task-agent mode)
+./install.sh --plugin              # = omp plugin link "$PWD"
+# published copy instead: omp plugin install git:github.com/jms830/fusion-omp
+
+# OR full custom-agent mode (copies skill + fusion-panel/fusion-judge agents + commands):
+./install.sh                       # copies into ~/.omp/agent
+# ./install.sh --dir <path>        # or a custom agent dir
 ```
 
-Then restart `omp` (or `/reload`).
+**vanilla pi** (experimental — install only; the parallel fan-out is OMP-native, see
+[`docs/CROSS-COMPAT.md`](docs/CROSS-COMPAT.md)):
+
+```bash
+./install.sh --pi                  # = pi install "$PWD"  (pi loads the skill via the pi.skills manifest)
+# or directly: pi install git:github.com/jms830/fusion-omp
+```
+
+Then restart the agent (or `/reload`).
 
 ## Configure the models (optional)
 
