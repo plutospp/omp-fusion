@@ -16,7 +16,8 @@ earlier draft that described a *Claude Code* marketplace plugin (wrong harness).
 | Installed/enabled plugins become "extension roots"; their `skills/ commands/ prompts/ rules/ tools/ hooks/ .mcp.json` are **auto-discovered** | `discovery/omp-extension-roots.ts` (roots = settings `extensions:` + plugins under `<plugins>/node_modules/`) + `discovery/omp-plugins.ts` | A content-only plugin (no JS) works — skills+commands load by convention. |
 | `agents/` is **NOT** in that auto-discovered set | `discovery/omp-plugins.ts` (walks skills/commands/prompts/rules/tools/hooks only) | **A plugin cannot ship the `fusion-panel`/`fusion-judge` task-subagents.** |
 | Task-subagents are discovered only from `~/.omp/agent/agents`, `.omp/agents`, Claude-plugin agents (**gated on `claude-plugins`, disabled here**), or **bundled** `src/prompts/agents/*.md` | `task/discovery.ts` (precedence: project .omp, user .omp, Claude-plugin, bundled) | Custom agents must be copied into a config dir, or bundled into OMP core. |
-| There is **no** `src/skills/` or `src/commands/` in OMP | package source | OMP ships **no first-party bundled skills/commands** — only bundled **agents** (`src/prompts/agents/`: task, oracle, explore, reviewer, designer, plan, librarian, init, frontmatter). |
+| No bundled **`.md`** skills/commands ship in OMP, but slash commands have a core **builtin registry** (`/advisor`, `/plan`, `/loop`, `/goal`, `/fast`…) | `slash-commands/builtin-registry.ts` (`BUILTIN_SLASH_COMMAND_REGISTRY`); `src/commands/` = CLI subcommands (`omp commit`, etc.), not slash defs | A first-party `/fusion` is possible — but as a **compiled core command**, not a dropped `.md`. The skill body still has no bundled-`.md` home. |
+| **OMP core already ships multi-model orchestration**: the **advisor** — a second model that watches the primary transcript, explores read-only, and injects structured advice (nit/concern/blocker) | `src/advisor/` (`AdvisorRuntime`, `advise-tool`) + `src/prompts/advisor/system.md`; gated by `advisor.enabled` + `/advisor on/off/status` + `modelRoles.advisor` | Precedent: configurable multi-model features ARE first-party. Fusion (panel→judge) is the advisor's sibling. #2609's "no" was scope-specific, not a blanket rejection. |
 | `claude-plugins.ts` = *"Claude Code Marketplace Plugin Provider"* reading `~/.claude/plugins/cache/`, priority 70 | `discovery/claude-plugins.ts` | The `.claude-plugin/plugin.json` "marketplace plugin" is the **Claude** path — **not** OMP, and disabled in this config. Do not target it. |
 
 ## The three real paths
@@ -32,11 +33,20 @@ bundled **`task`** agent — see SKILL.md *"Plugin mode — no custom agents"*. 
 the link. This is the lowest-friction way to give Fusion to other OMP users.
 
 ### 3. First-party PR to oh-my-pi core
-Only the **two agents** have a clean first-party home: add `fusion-panel.md` + `fusion-judge.md` to
-`src/prompts/agents/` (joining task/oracle/explore). The **skill + commands have no first-party home**
-(no `src/skills`, no `src/commands`), and #2609 (closed *not-planned*) shows maintainers reject added
-core orchestration surface. So a *full* fusion core PR is unlikely to be wanted; an **agents-only** PR is
-the realistic core ask — but it delivers little without the skill, so path 2 is usually better.
+There are now **two** core framings, with the advisor as precedent (see the fact table):
+
+- **Agents-only (low effort, low value).** Add `fusion-panel.md` + `fusion-judge.md` to
+  `src/prompts/agents/` (joining task/oracle/reviewer). Trivial PR — but two subagent *types* without an
+  in-core orchestrator do little; the skill that drives the `eval` fan-out still has no bundled-`.md` home.
+- **`/fusion` as an advisor-sibling feature (higher effort, the version worth merging).** OMP already
+  ships the **advisor** (one watchdog model reviewing the transcript, `modelRoles.advisor`, `/advisor
+  on/off`). Fusion is its generalization: a panel → judge run configured via `modelRoles.fusion_judge` /
+  `fusion_panel_*` (the idiom this repo already uses), exposed as a builtin `/fusion`. This is a
+  TypeScript build in core, maintainer-gated — but the advisor proves the surface is welcome in principle.
+
+**Recommended upstream move:** ship path 2 (plugin) publicly first as the working reference, then open an
+**issue** asking maintainers which scope they'd accept — the two agents, or a real `/fusion` feature —
+rather than pre-committing. This repo (skill + commands + agents) is the prototype/spec either way.
 
 ## Repo-contract checklist (from PR #2610 review, verified)
 - [ ] **Prompts in static `.md`** — no inline TS strings/template literals. (Skill body + `references/judge_rubric.md` + agent system prompts satisfy this; the `eval` snippets in SKILL.md are *instructional*, not committed prompt-building code.)
