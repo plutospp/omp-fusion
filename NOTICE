@@ -1,4 +1,4 @@
-fusion-omp
+omp-fusion
 ==========
 
 This project is an independent, OMP-native (oh-my-pi / `omp`) port of the

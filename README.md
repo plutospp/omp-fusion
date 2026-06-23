@@ -1,4 +1,4 @@
-# fusion-omp
+# omp-fusion
 
 **Fuse a panel of frontier models into one judged answer — natively in [OMP](https://github.com/can1357/oh-my-pi) (`omp`).**
 
@@ -36,12 +36,12 @@ Each harness has its own vanilla install path. `install.sh` just wraps them.
 **OMP (recommended):**
 
 ```bash
-git clone https://github.com/jms830/fusion-omp ~/github/fusion-omp
-cd ~/github/fusion-omp
+git clone https://github.com/jms830/omp-fusion ~/github/omp-fusion
+cd ~/github/omp-fusion
 
 # vanilla OMP plugin — omp links the repo and auto-discovers skill + commands (task-agent mode)
 ./install.sh --plugin              # = omp plugin link "$PWD"
-# published copy instead: omp plugin install git:github.com/jms830/fusion-omp
+# published copy instead: omp plugin install git:github.com/jms830/omp-fusion
 
 # OR full custom-agent mode (copies skill + fusion-panel/fusion-judge agents + commands):
 ./install.sh                       # copies into ~/.omp/agent
@@ -53,7 +53,7 @@ cd ~/github/fusion-omp
 
 ```bash
 ./install.sh --pi                  # = pi install "$PWD"  (pi loads the skill via the pi.skills manifest)
-# or directly: pi install git:github.com/jms830/fusion-omp
+# or directly: pi install git:github.com/jms830/omp-fusion
 ```
 
 Then restart the agent (or `/reload`).

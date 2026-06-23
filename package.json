@@ -1,5 +1,5 @@
 {
-  "name": "fusion-omp",
+  "name": "omp-fusion",
   "version": "0.1.0",
   "description": "Fusion — run a hard question through an independent parallel model panel, then a judge synthesizes. An OMP skill + slash commands (installs on vanilla pi too; parallel fan-out is OMP-native).",
   "keywords": [
@@ -19,7 +19,7 @@
   "author": "Jordan Strauss",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jms830/fusion-omp.git"
+    "url": "git+https://github.com/jms830/omp-fusion.git"
   },
   "omp": {
     "name": "fusion",

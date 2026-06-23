@@ -36,7 +36,7 @@ is OMP-native. Verified against both packages' source/docs.
 - **vanilla pi: use the dedicated extension.** This package installs the skill (method + prompts) on pi,
   but the parallel fan-out is OMP-native. For a turnkey pi experience, install
   **`pi install npm:pi-fusion`** ([`synthetic-recon/pi-fusion`](https://github.com/synthetic-recon/pi-fusion)) —
-  a pi extension that implements the fan-out in TypeScript. `fusion-omp` stays the **OMP-native** skill;
+  a pi extension that implements the fan-out in TypeScript. `omp-fusion` stays the **OMP-native** skill;
   the two are complementary (same method, different harness).
 
 ## Why not a single `.ts` extension that works on both?

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to fusion-omp. Format loosely follows Keep a Changelog.
+All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 
 ## [Unreleased]
 
@@ -23,7 +23,7 @@ All notable changes to fusion-omp. Format loosely follows Keep a Changelog.
   active/session model writes the final answer (OpenRouter-Fusion shape); default stays judge-writes-final.
 - `docs/CROSS-COMPAT.md` now cites **`synthetic-recon/pi-fusion`** (npm, MIT) as the proven pi-native
   reference extension (panel→judge via pi's `ModelRegistry` + a concurrency limiter); pi users can
-  `pi install npm:pi-fusion` while `fusion-omp` stays the OMP-native skill.
+  `pi install npm:pi-fusion` while `omp-fusion` stays the OMP-native skill.
 
 ### Changed
 - `docs/PR-TO-OH-MY-PI.md` rewritten to the **verified OMP reality** — removed the Claude-Code

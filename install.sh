@@ -3,7 +3,7 @@
 #
 # Vanilla install paths (preferred — these are each harness's own documented mechanism):
 #   --plugin   OMP plugin:  `omp plugin link <this repo>`  (local dev). For a published copy use
-#              `omp plugin install git:github.com/jms830/fusion-omp`. OMP auto-discovers skills/ +
+#              `omp plugin install git:github.com/jms830/omp-fusion`. OMP auto-discovers skills/ +
 #              commands/ from the plugin; `agents/` is NOT discovered, so the skill uses the bundled
 #              `task` agent (SKILL.md "Plugin mode").
 #   --pi       vanilla pi package:  `pi install <this repo>`  (adds to ~/.pi/agent/settings.json via
