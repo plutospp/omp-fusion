@@ -197,3 +197,100 @@ export function createHandlerStream(model: Model<Api>): HandlerStreamController 
 		},
 	};
 }
+
+export interface MajorityResult<T> {
+	/** Successful results, in completion order. */
+	successes: T[];
+	/** Count of genuine failures (threw or returned undefined). Excludes straggler aborts. */
+	failures: number;
+	/** True if `parentSignal` was aborted (user cancel) — caller must fail the whole stream, not proceed. */
+	parentAborted: boolean;
+}
+
+/**
+ * Race `tasks` until `majority` succeed, then abort the rest.
+ * Also resolves early when quorum becomes unreachable (`total − failures < majority`).
+ * Each task receives a child `AbortSignal` that fires when (a) majority is reached
+ * (straggler abort) or (b) `parentSignal` aborts (user cancel).
+ *
+ * A task returning `undefined` counts as a genuine failure. A task throwing because
+ * its own child signal was aborted by this helper (straggler abort) does NOT count
+ * as a failure. A task throwing for any other reason counts as a failure.
+ *
+ * Resolution is checked on EVERY task settlement (success and failure alike), so
+ * the all-settled-no-majority case always resolves (never hangs).
+ */
+export async function raceToMajority<T>(
+	tasks: Array<(signal: AbortSignal) => Promise<T | undefined>>,
+	majority: number,
+	parentSignal?: AbortSignal,
+): Promise<MajorityResult<T>> {
+	const total = tasks.length;
+	const children = tasks.map(() => new AbortController());
+	const successes: T[] = [];
+	let failures = 0;
+	let parentAborted = false;
+	let settled = 0;
+	let done = false;
+
+	return new Promise<MajorityResult<T>>((resolve) => {
+		function finish(): void {
+			if (done) return;
+			done = true;
+			for (const child of children) child.abort();
+			resolve({ successes, failures, parentAborted });
+		}
+
+		if (parentSignal?.aborted) {
+			parentAborted = true;
+			finish();
+			return;
+		}
+
+		const onParentAbort = (): void => {
+			parentAborted = true;
+			finish();
+		};
+		parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+
+		function checkQuorum(): void {
+			if (done) return;
+			if (successes.length >= majority) {
+				finish();
+			} else if (total - failures < majority) {
+				finish();
+			}
+		}
+
+		if (total === 0) {
+			finish();
+			return;
+		}
+
+		tasks.forEach((task, i) => {
+			task(children[i].signal).then(
+				(result) => {
+					if (done) return;
+					settled++;
+					if (result !== undefined) {
+						successes.push(result);
+					} else {
+						failures++;
+					}
+					checkQuorum();
+					if (settled === total) finish();
+				},
+				() => {
+					if (done) return;
+					settled++;
+					// Straggler abort (our own child signal fired, not parent) is NOT a failure.
+					if (!(children[i].signal.aborted && !parentAborted)) {
+						failures++;
+					}
+					checkQuorum();
+					if (settled === total) finish();
+				},
+			);
+		});
+	});
+}

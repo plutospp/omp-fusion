@@ -109,14 +109,16 @@ models", "second/third opinion in parallel", etc.
 
 ## Use as a model (`omp-fusion` provider)
 
-Both pipelines also register as ordinary models — `omp-fusion/fusion` and `omp-fusion/ultrafusion` — via
-an OMP extension shipped inside this same plugin (`extension/`, declared in `package.json`'s
+All three pipelines also register as ordinary models — `omp-fusion/fusion`, `omp-fusion/fusion-fast`,
+and `omp-fusion/ultrafusion` — via an OMP extension shipped inside this same plugin (`extension/`,
+declared in `package.json`'s
 `omp.extensions`). No separate install step: if the plugin is installed, the provider is live. Use them
 anywhere OMP accepts a model string:
 
 ```bash
 omp -p "Should we use Kafka or SQS?" --model omp-fusion/fusion
 omp --model omp-fusion/ultrafusion
+omp -p "Plan a migration strategy" --model omp-fusion/fusion-fast
 ```
 
 ```yaml
@@ -199,9 +201,10 @@ skills/ultrafusion/references/aggregator_rubric.md  the aggregator's integration
 agents/ultrafusion-{proposer,critic,aggregator}.md  the three planning subagents (models per spawn)
 commands/ultrafusion.md                 /ultrafusion slash entry point
 scripts/detect_panel.sh                 print a suggested modelRoles block (Fusion + Ultrafusion) from your config
-extension/index.ts                      registers the omp-fusion provider (omp-fusion/fusion, omp-fusion/ultrafusion)
+extension/index.ts                      registers the omp-fusion provider (fusion, fusion-fast, ultrafusion)
 extension/fusion-handler.ts             streamSimple: panel -> judge, reasoning-only
 extension/ultrafusion-handler.ts        streamSimple: proposers -> critics -> aggregator, reasoning-only
+extension/fusion-fast-handler.ts        streamSimple: proposers -> aggregator (majority quorum, no critics)
 extension/shared/                       model-role resolution, prompt reuse, event-stream helpers
 ```
 

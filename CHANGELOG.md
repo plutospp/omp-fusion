@@ -5,6 +5,15 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 ## [Unreleased]
 
 ### Added
+- **`omp-fusion/fusion-fast`** — Ultrafusion without the critics wave, with majority-quorum early
+  termination. Fans out to all configured proposers in parallel; the instant `floor(N/2)+1` succeed,
+  aborts the stragglers and ships those proposals straight to the aggregator. Reuses the same
+  `ultrafusion_proposer_*` / `ultrafusion_aggregator` roles. The aggregator's built-in degraded mode
+  (no critic comments) does the comparative analysis itself.
+- `raceToMajority` helper in `extension/shared/stream.ts` — generic majority-quorum race with
+  per-task child `AbortController`, failure-aware unreachable-quorum detection, and parent-abort
+  propagation.
+
 - OMP **plugin mode**: `package.json` with dual `omp` + `pi` manifest so Fusion installs as an OMP
   plugin (`omp plugin link`/`install`) — `skills/` + `commands/` auto-discovered. In plugin mode the
   skill uses the bundled `task` agent (OMP does not discover `agents/` from a plugin), so no custom-agent
