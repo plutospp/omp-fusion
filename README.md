@@ -2,12 +2,19 @@
 
 **Fuse a panel of frontier models into one judged answer — natively in [OMP](https://github.com/can1357/oh-my-pi) (`omp`).**
 
-Fusion runs a hard question through a **panel → judge** pipeline. The same prompt is dispatched to
-several models *in parallel* — each answering independently with web search and bash, none seeing the
-others' work — then a **judge** model reads every answer and writes a final answer grounded in a
-structured analysis (consensus, contradictions, partial coverage, unique insights, blind spots).
+omp-fusion ships four multi-model pipelines, each trading depth for speed:
 
-This is real information fusion (independence → synthesis), **not** "ask several models and average."
+| Pipeline | Shape | Tradeoff |
+|---|---|---|
+| **Fusion** | N panelists → judge | Full synthesis; slowest |
+| **Ultrafusion** | N proposers → M critics → aggregator | Deepest planning; most tokens |
+| **Fusion-fast** | N proposers → aggregator (majority quorum, abort stragglers) | Skips critics; stops at ⌊N/2⌋+1 |
+| **Fusion-samp** | ⌊N/2⌋+1 sampled proposers → aggregator | Cheapest; random subset, nothing wasted |
+
+All four dispatch the same prompt to several models *in parallel* — each answering independently,
+none seeing the others' work — then a synthesizer (judge or aggregator) reads the results and writes
+a final answer grounded in structured analysis. This is real information fusion (independence →
+synthesis), **not** "ask several models and average."
 
 This is an OMP-native port of [duolahypercho/fusion-fable](https://github.com/duolahypercho/fusion-fable)
 (a Claude Code skill). See [`NOTICE`](NOTICE) for what is preserved and what changed.
@@ -186,14 +193,28 @@ no equivalent for a raw model call. A resolved role that points back at `omp-fus
 
 ```
 /ultrafusion <task>
-  → resolve proposer (x6) + critic (x3) + aggregator models (override → ultrafusion_* roles →
+  → resolve proposer (xN) + critic (xM) + aggregator models (override → ultrafusion_* roles →
     fusion_panel_*/fusion_judge cycled → defaults; floor = same model x2 for proposers)
-  → wave 1: 6 ultrafusion-proposer subagents plan in parallel, SAME verbatim task, blind, read-only
-  → wave 2: 3 ultrafusion-critic subagents (parallel, blind to each other) each read ALL proposals and
+  → wave 1: N ultrafusion-proposer subagents plan in parallel, SAME verbatim task, blind, read-only
+  → wave 2: M ultrafusion-critic subagents (parallel, blind to each other) each read ALL proposals and
     return Consensus / Contradictions / Unique opinions / Recommendation
   → wave 3: 1 ultrafusion-aggregator integrates the critic comments (+ proposals as grounding) into the
     final plan, leading with the plan, Synthesis notes last
   → present the aggregator's final plan (+ optional provenance under .fusion/runs/)
+```
+
+```
+omp-fusion/fusion-fast (provider-only)
+  → resolve proposers + aggregator (same ultrafusion_* roles, critics ignored)
+  → fan out ALL proposers; the instant ⌊N/2⌋+1 succeed, abort the stragglers
+  → aggregator integrates the majority's proposals (degraded mode: no critic comments)
+```
+
+```
+omp-fusion/fusion-samp (provider-only)
+  → resolve proposers + aggregator (same ultrafusion_* roles, critics ignored)
+  → randomly sample ⌊N/2⌋+1 proposers (Fisher-Yates); run only those
+  → aggregator integrates the sample's proposals (degraded mode: no critic comments)
 ```
 
 Files:
