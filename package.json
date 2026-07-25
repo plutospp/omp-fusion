@@ -25,7 +25,10 @@
   },
   "omp": {
     "name": "fusion",
-    "description": "Independent parallel model panel -> judge synthesis, plus an /ultrafusion planning pipeline (6 proposers -> 3 critics -> aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled `task` agent in plugin mode, so no custom-agent install is required. Configure via modelRoles (fusion_panel_*/fusion_judge and ultrafusion_proposer_*/ultrafusion_critic_*/ultrafusion_aggregator)."
+    "description": "Independent parallel model panel -> judge synthesis, plus an /ultrafusion planning pipeline (6 proposers -> 3 critics -> aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled `task` agent in plugin mode, so no custom-agent install is required. Configure via modelRoles (fusion_panel_*/fusion_judge and ultrafusion_proposer_*/ultrafusion_critic_*/ultrafusion_aggregator). Also registers an `omp-fusion` provider (`omp-fusion/fusion`, `omp-fusion/ultrafusion`) so both pipelines are selectable as ordinary models.",
+    "extensions": [
+      "./extension/index.ts"
+    ]
   },
   "pi": {
     "skills": [
@@ -37,6 +40,7 @@
     "commands",
     "agents",
     "scripts",
+    "extension",
     "docs",
     "install.sh",
     "README.md",

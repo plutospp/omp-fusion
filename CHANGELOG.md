@@ -36,6 +36,20 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
   single plan, and the aggregator runs a degraded self-analysis mode if every critic fails.
 - `scripts/detect_panel.sh` now also prints the suggested `ultrafusion_*` roles, cycling the detected
   cross-family panel into the 6 proposer + 3 critic slots.
+- **`omp-fusion` provider**: both pipelines now also register as ordinary models —
+  `omp-fusion/fusion` and `omp-fusion/ultrafusion` — via an OMP extension (`extension/`, declared in
+  `package.json`'s `omp.extensions`), selectable anywhere OMP accepts a model string (`--model`,
+  `/model`, `modelRoles`, a subagent `model:` field). No separate install step — the extension ships
+  inside the existing plugin. Role resolution mirrors the slash commands' precedence (configured roles
+  → cycled fusion-panel fallback for Ultrafusion → built-in defaults), minus the invocation-flag tier,
+  which has no equivalent for a raw model call. Panelist/proposer failures, degradation notes, and
+  context-window truncation all follow the same robustness rules as the skill path. A resolved role
+  that would point back at `omp-fusion/*` is rejected (self-recursion guard). **Known limitation**:
+  panelists and proposers reason without tools through this path (no `bash`/`web_search`) — restoring
+  tool use needs either a from-scratch tool loop or a way to construct a tool-enabled session from
+  extension code, neither implemented yet; use `/fusion`/`/ultrafusion` when panelists need to verify
+  claims against real code or the web. Also unsupported: `omp bench` / `omp dry-balance`, which bypass
+  the `session_start` event this provider's role resolution depends on.
 
 ### Changed
 - `docs/PR-TO-OH-MY-PI.md` rewritten to the **verified OMP reality** — removed the Claude-Code
@@ -46,6 +60,16 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 - `skills/fusion/SKILL.md`'s `eval` examples passed `agentType:` to `agent()`, a stale option key; the
   current OMP eval prelude takes `agent:`. Left uncorrected, panel/judge spawns silently mis-resolve.
   Corrected all four call sites (panel fan-out, judge call, and both plugin-mode `task`-agent spawns).
+
+### Known issues
+- `commands/fusion.md`'s YAML frontmatter fails to parse when discovered through an installed plugin
+  (`YAML Parse error: Unexpected token`); `/fusion` is unusable while this stands, though the
+  `omp-fusion/fusion` and `omp-fusion/ultrafusion` provider models are unaffected (they don't read
+  command frontmatter). `fusion-solo.md`/`fusion-pair.md`/`fusion-trio.md`/`ultrafusion.md` all parse
+  fine, narrowing the cause to something specific to `fusion.md`'s description (candidates: the bare
+  `→` arrow, the `fusion_panel_*` asterisk, or the `--panel m1,m2,...` comma/ellipsis — not the
+  `<your question>` angle brackets, which `fusion-solo.md` also has without issue). Discovered while
+  verifying the `omp-fusion` provider; not fixed here — out of scope for that change.
 
 ## [0.1.0]
 

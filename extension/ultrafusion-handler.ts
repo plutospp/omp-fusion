@@ -1,0 +1,221 @@
+import { completeSimple } from "@oh-my-pi/pi-ai";
+import type {
+	Api,
+	AssistantMessage,
+	AssistantMessageEventStream,
+	Context,
+	Model,
+	SimpleStreamOptions,
+} from "@oh-my-pi/pi-ai";
+import { resolveUltrafusionRoles, streamOptionsFor } from "./shared/models";
+import {
+	ULTRAFUSION_AGGREGATOR_PROMPT,
+	ULTRAFUSION_CRITIC_PROMPT,
+	ULTRAFUSION_PROPOSER_PROMPT,
+} from "./shared/prompts";
+import {
+	CHARS_PER_TOKEN_ESTIMATE,
+	createHandlerStream,
+	extractAnswerText,
+	extractTask,
+	sumUsage,
+	truncateForContext,
+} from "./shared/stream";
+
+/** Ultrafusion proposers -> critics -> aggregator pipeline: plan by independent synthesis. */
+export function ultrafusionStream(
+	model: Model<Api>,
+	context: Context,
+	_options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+	const task = extractTask(context);
+	const { proposers, critics, aggregator } = resolveUltrafusionRoles();
+	const handlerStream = createHandlerStream(model);
+
+	void (async () => {
+		const innerUsages: AssistantMessage["usage"][] = [];
+		try {
+			handlerStream.progress(
+				`Ultrafusion: fanning out to ${proposers.length} proposers: ${proposers.map((s) => s.label).join(", ")}`,
+			);
+
+			const proposalResults = await Promise.all(
+				proposers.map(async (slot, i) => {
+					try {
+						const response = await completeSimple(
+							slot.model,
+							{
+								systemPrompt: [ULTRAFUSION_PROPOSER_PROMPT],
+								messages: [
+									{
+										role: "user",
+										content: task,
+										timestamp: Date.now(),
+									},
+								],
+							},
+							streamOptionsFor(slot.model),
+						);
+						innerUsages.push(response.usage);
+						const text = extractAnswerText(response);
+						if (response.stopReason === "error" || text === "") {
+							return undefined;
+						}
+						return { index: i + 1, label: slot.label, text };
+					} catch {
+						return undefined;
+					}
+				}),
+			);
+
+			const proposals = proposalResults.filter(
+				(r): r is { index: number; label: string; text: string } => r !== undefined,
+			);
+			handlerStream.progress(
+				`Ultrafusion: ${proposals.length}/${proposers.length} proposers returned.`,
+			);
+
+			if (proposals.length < 2) {
+				if (proposals.length === 1) {
+					handlerStream.finish(
+						`${proposals[0].text}\n\n[Ultrafusion: proposer stage degraded to 1 answer — critic/aggregator synthesis skipped.]`,
+						sumUsage(innerUsages),
+					);
+				} else {
+					handlerStream.finish(
+						"[Ultrafusion: proposer stage produced no usable answers — critic/aggregator synthesis skipped.]",
+						sumUsage(innerUsages),
+					);
+				}
+				return;
+			}
+
+			const criticMaxChars =
+				((critics[0]?.model.contextWindow ?? 128000) * CHARS_PER_TOKEN_ESTIMATE) / (2 * proposals.length);
+			const criticInput =
+				`=== ORIGINAL TASK ===\n${task}\n\n` +
+				proposals
+					.map(
+						(p) =>
+							`=== PROPOSAL ${p.index} (model: ${p.label}) ===\n${truncateForContext(
+								p.text,
+								criticMaxChars,
+								"[truncated for critics]",
+							)}`,
+					)
+					.join("\n\n");
+
+			const comments: { index: number; label: string; text: string }[] = [];
+			if (critics.length > 0) {
+				handlerStream.progress(
+					`Ultrafusion: fanning out to ${critics.length} critics: ${critics.map((s) => s.label).join(", ")}`,
+				);
+
+				const commentResults = await Promise.all(
+					critics.map(async (slot, i) => {
+						try {
+							const response = await completeSimple(
+								slot.model,
+								{
+									systemPrompt: [ULTRAFUSION_CRITIC_PROMPT],
+									messages: [
+										{
+											role: "user",
+											content: criticInput,
+											timestamp: Date.now(),
+										},
+									],
+								},
+								streamOptionsFor(slot.model),
+							);
+							innerUsages.push(response.usage);
+							const text = extractAnswerText(response);
+							if (response.stopReason === "error" || text === "") {
+								return undefined;
+							}
+							return { index: i + 1, label: slot.label, text };
+						} catch {
+							return undefined;
+						}
+					}),
+				);
+
+				comments.push(
+					...commentResults.filter(
+						(r): r is { index: number; label: string; text: string } => r !== undefined,
+					),
+				);
+				handlerStream.progress(
+					`Ultrafusion: ${comments.length}/${critics.length} critics returned.`,
+				);
+			}
+
+			const aggregatorMaxChars =
+				(aggregator.model.contextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * (comments.length + proposals.length));
+			const aggregatorInput = [
+				`=== ORIGINAL TASK ===\n${task}`,
+				...comments.map(
+					(c) =>
+						`=== CRITIC COMMENT ${c.index} (model: ${c.label}) ===\n${truncateForContext(
+							c.text,
+							aggregatorMaxChars,
+							"[truncated for aggregator]",
+						)}`,
+				),
+				...proposals.map(
+					(p) =>
+						`=== PROPOSAL ${p.index} (model: ${p.label}) ===\n${truncateForContext(
+							p.text,
+							aggregatorMaxChars,
+							"[truncated for aggregator]",
+						)}`,
+				),
+			].join("\n\n");
+
+			handlerStream.progress("Ultrafusion: aggregator integrating...");
+			const aggregatorResult = await completeSimple(
+				aggregator.model,
+				{
+					systemPrompt: [ULTRAFUSION_AGGREGATOR_PROMPT],
+					messages: [
+						{
+							role: "user",
+							content: aggregatorInput,
+							timestamp: Date.now(),
+						},
+					],
+				},
+				streamOptionsFor(aggregator.model),
+			);
+
+			if (aggregatorResult.stopReason === "error") {
+				handlerStream.fail(
+					"error",
+					`Ultrafusion aggregator call failed: ${aggregatorResult.errorMessage ?? "stopReason=error"}`,
+				);
+				return;
+			}
+
+			const finalText = extractAnswerText(aggregatorResult);
+			if (finalText === "") {
+				handlerStream.fail(
+					"error",
+					"Ultrafusion aggregator returned an empty answer.",
+				);
+				return;
+			}
+
+			handlerStream.finish(
+				finalText,
+				sumUsage([...innerUsages, aggregatorResult.usage]),
+			);
+		} catch (err) {
+			handlerStream.fail(
+				"error",
+				err instanceof Error ? err.message : String(err),
+			);
+		}
+	})();
+
+	return handlerStream.stream;
+}

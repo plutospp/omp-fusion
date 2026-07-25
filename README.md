@@ -107,6 +107,40 @@ models", "second/third opinion in parallel", etc.
 /ultrafusion  Refactor the auth module to support per-tenant OAuth without breaking existing sessions.
 ```
 
+## Use as a model (`omp-fusion` provider)
+
+Both pipelines also register as ordinary models — `omp-fusion/fusion` and `omp-fusion/ultrafusion` — via
+an OMP extension shipped inside this same plugin (`extension/`, declared in `package.json`'s
+`omp.extensions`). No separate install step: if the plugin is installed, the provider is live. Use them
+anywhere OMP accepts a model string:
+
+```bash
+omp -p "Should we use Kafka or SQS?" --model omp-fusion/fusion
+omp --model omp-fusion/ultrafusion
+```
+
+```yaml
+modelRoles:
+  fusion_judge: omp-fusion/fusion   # e.g. use Fusion's judged answer as another role's model
+```
+
+`/model` and `omp models` list both. Role resolution follows the same precedence as the slash commands
+(configured roles → cycled fusion-panel fallback for Ultrafusion → built-in defaults), minus the
+`--panel`/`--judge`/`--proposers`/`--critics`/`--aggregator`/`--analysis-only` invocation flags, which have
+no equivalent for a raw model call. A resolved role that points back at `omp-fusion/*` is always rejected
+(self-recursion guard) and falls through to the next candidate.
+
+**Known limitation:** panelists and proposers reason without tools (no `bash`/`web_search`) through this
+path — unlike `/fusion` and `/ultrafusion`, whose panelists/proposers have full tools. Restoring tool use
+inside a `streamSimple` handler needs either a from-scratch tool loop or a way to construct a tool-enabled
+session from extension code; neither is implemented yet. Use the slash commands when panelists need to
+verify claims against real code or the web.
+
+Also unsupported: `omp bench` / `omp dry-balance`, which build a one-shot model registry and never fire
+the `session_start` event `omp-fusion` needs for role resolution — invoking `omp-fusion/*` through those
+specific paths throws a clear error rather than silently resolving the wrong models. Normal interactive
+and `-p`/print-mode sessions are unaffected.
+
 ## How it works
 
 ```
@@ -144,6 +178,10 @@ skills/ultrafusion/references/aggregator_rubric.md  the aggregator's integration
 agents/ultrafusion-{proposer,critic,aggregator}.md  the three planning subagents (models per spawn)
 commands/ultrafusion.md                 /ultrafusion slash entry point
 scripts/detect_panel.sh                 print a suggested modelRoles block (Fusion + Ultrafusion) from your config
+extension/index.ts                      registers the omp-fusion provider (omp-fusion/fusion, omp-fusion/ultrafusion)
+extension/fusion-handler.ts             streamSimple: panel -> judge, reasoning-only
+extension/ultrafusion-handler.ts        streamSimple: proposers -> critics -> aggregator, reasoning-only
+extension/shared/                       model-role resolution, prompt reuse, event-stream helpers
 ```
 
 ## Contributing upstream
