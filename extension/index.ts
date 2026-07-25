@@ -4,8 +4,8 @@
 // `model:` field.
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import { OMP_FUSION_PROVIDER, captureModelsFacade } from "./shared/models";
 import { fusionStream } from "./fusion-handler";
-import { captureModelsFacade } from "./shared/models";
 import { ultrafusionStream } from "./ultrafusion-handler";
 
 /** Custom wire-API id this provider registers under `registerCustomApi`. Must not collide with a builtin `KnownApi`. */
@@ -21,7 +21,7 @@ function dispatchStream(model: Model<Api>, context: Context, options?: SimpleStr
 export default function ompFusionExtension(pi: ExtensionAPI): void {
 	captureModelsFacade(pi);
 
-	pi.registerProvider("omp-fusion", {
+	pi.registerProvider(OMP_FUSION_PROVIDER, {
 		// Never dialed — every call is handled in-process by `streamSimple` below.
 		baseUrl: "http://127.0.0.1",
 		apiKey: "unused",

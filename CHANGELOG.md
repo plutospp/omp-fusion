@@ -71,6 +71,55 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
   `<your question>` angle brackets, which `fusion-solo.md` also has without issue). Discovered while
   verifying the `omp-fusion` provider; not fixed here — out of scope for that change.
 
+## [Unreleased — review pass]
+
+### Added
+- Permanent **typecheck tooling**: `tsconfig.json` + `text-imports.d.ts` + `bun run typecheck`
+  (typescript + bun-types devDeps). The extension TypeScript had never been compiled before; this
+  closes that blind spot and is run as part of every future change.
+
+### Fixed (Critical)
+- **`Model.contextWindow: null` no longer destroys panelist/proposer/critic/aggregator answers.**
+  780 of 3863 bundled catalog models report `contextWindow: null`; on any one set as
+  `fusion_judge`/`ultrafusion_aggregator`, the truncation math produced `NaN` and `slice(0, NaN)` →
+  `""`, so the judge/aggregator received correctly-formatted headers wrapping nothing. Added
+  `DEFAULT_CONTEXT_WINDOW_ESTIMATE = 128_000` and a `Number.isFinite` guard in `truncateForContext`.
+- **Judge/aggregator labels now reflect the actually-resolved model**, not a hardcoded role name.
+  `ResolvedSlot.label` carries `@<role> (<provider>/<id>)` from the real resolution path; a run that
+  silently fell back to `@slow` now reports that in progress lines and the judge/critic input headers.
+- **Per-slot failures are now visible.** The bare `catch { return undefined; }` in panel/proposer/critic
+  fan-out swallowed infrastructure errors (auth/network) as silently empty answers. Each catch now emits
+  a `handlerStream.progress` line with the slot label and the error message before returning undefined.
+  The drop-on-failure contract is unchanged — only the visibility is new.
+- **Multi-turn context is now forwarded to inner calls.** `extractTask` returns
+  `{ task, priorMessages }`; both handlers prepend `priorMessages` to every inner
+  panelist/proposer/critic/aggregator call so the panel can reason about the full conversation, not
+  just the latest turn. Thinking blocks and tool results from prior turns are filtered — only text
+  content is forwarded.
+- **`options.signal` is now forwarded** to every inner `completeSimple` call. Cancelling a Fusion /
+  Ultrafusion run no longer leaves every in-flight inner call (2–10 of them) running to completion
+  invisibly after the user gave up.
+
+### Fixed (Medium)
+- Role-resolution throws now land inside the async IIFE in both handlers, so all 5 throw paths produce
+  a clean `error` event through the stream contract instead of escaping to callers that bypass it.
+- `Usage.cost.total` is now summed correctly in `sumUsage` (it was never set, so displayed/recorded
+  cost was always `$0` regardless of real inner-model spend).
+- Self-recursion guard literal `"omp-fusion"` is now a single exported `OMP_FUSION_PROVIDER` constant
+  shared between `models.ts` and `index.ts` — a rename in either file can no longer silently disable
+  the guard.
+- Attribution label now includes the resolved model identity (`@<role> (<provider>/<id>)`), giving the
+  judge/critic the cross-model-family signal the rubrics rank highest.
+- `criticInput` is no longer built (full truncation pass over every proposal) when `critics.length === 0`.
+- `fail()` now writes the `reason` parameter through to `partial.stopReason` instead of hardcoding
+  `"error"`, making the new abort forwarding observable.
+
+### Documentation
+- README "Known limitations of the provider path" expanded with four entries: outer `systemPrompt`/
+  `tools` discarded by design (with reasoning), floor-mode divergence caveat (no `temperature` channel
+  in `SimpleStreamOptions`), module-singleton model-registry caveat for Windows / multi-tenant hosts,
+  and multi-turn context-cost note for long sessions.
+
 ## [0.1.0]
 
 ### Added

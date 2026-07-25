@@ -130,16 +130,37 @@ modelRoles:
 no equivalent for a raw model call. A resolved role that points back at `omp-fusion/*` is always rejected
 (self-recursion guard) and falls through to the next candidate.
 
-**Known limitation:** panelists and proposers reason without tools (no `bash`/`web_search`) through this
-path — unlike `/fusion` and `/ultrafusion`, whose panelists/proposers have full tools. Restoring tool use
-inside a `streamSimple` handler needs either a from-scratch tool loop or a way to construct a tool-enabled
-session from extension code; neither is implemented yet. Use the slash commands when panelists need to
-verify claims against real code or the web.
+**Known limitations of the provider path** (the slash commands are unaffected unless noted):
 
-Also unsupported: `omp bench` / `omp dry-balance`, which build a one-shot model registry and never fire
-the `session_start` event `omp-fusion` needs for role resolution — invoking `omp-fusion/*` through those
-specific paths throws a clear error rather than silently resolving the wrong models. Normal interactive
-and `-p`/print-mode sessions are unaffected.
+- **No tool use inside panelists/proposers.** Unlike `/fusion` and `/ultrafusion`, whose panelists and
+  proposers have full `bash`/`web_search` access, panelists reached through `--model omp-fusion/*` reason
+  prose-only. Restoring tool use inside a `streamSimple` handler needs either a from-scratch tool loop or a
+  way to construct a tool-enabled session from extension code; neither is implemented yet. Use the slash
+  commands when panelists need to verify claims against real code or the web.
+- **Outer `systemPrompt`/`tools` are discarded by design.** When a caller routes through `--model
+  omp-fusion/*`, the outer agent's system prompt and tool list are *intentionally not* forwarded to inner
+  panelists. Inner panelists use their own role-specific prompts (the same `agents/*.md` the slash commands
+  use). Forwarding an agentic outer system prompt into prose-only panelists would actively degrade answers
+  by injecting instructions like "always use tools" into models that have no tools. Multi-turn history
+  *is* preserved (see below); only the outer system prompt and tool list are dropped.
+- **Floor mode may not diverge.** When only one panel/proposer role resolves, the pipeline duplicates it
+  into two cold runs of the same model (documented floor mode). `SimpleStreamOptions` exposes no
+  `temperature` channel, so the provider cannot force sampling variance — if the underlying model defaults
+  to low temperature, the two runs may produce near-identical answers. For genuine divergence, configure
+  two distinct models (e.g. `fusion_panel_1` + `fusion_panel_2`) rather than relying on floor mode.
+- **Module-singleton model registry.** The provider captures one model-resolution facade per process at
+  `session_start` and holds it in module-level state. This is fine for the intended single-session CLI
+  deployment, but is not safe for concurrent multi-session use within one process (a pattern that has been
+  observed to behave differently on Windows, where Bun's module cache-busting differs from POSIX). Don't
+  embed the provider in a long-running multi-tenant host without giving each session its own process.
+- **`omp bench` / `omp dry-balance` unsupported.** Those paths build a one-shot model registry and never
+  fire `session_start`, so role resolution throws a clear error rather than silently resolving the wrong
+  models. Normal interactive and `-p`/print-mode sessions are unaffected.
+- **Multi-turn context cost.** Prior-turn user and assistant messages are forwarded to every inner
+  panelist/proposer/critic/aggregator call so the panel can reason about the full conversation, not just
+  the latest turn. Thinking blocks and tool results from prior turns are *not* forwarded — only text
+  content. This means each inner call's token cost grows with conversation length; for very long sessions
+  consider `/clear` before invoking Fusion on an unrelated topic.
 
 ## How it works
 

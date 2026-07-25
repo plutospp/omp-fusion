@@ -13,13 +13,12 @@
 // `omp-fusion/*` used through those specific bypass paths throws a clear
 // error rather than silently resolving the wrong models. Normal interactive
 // and `-p`/print-mode sessions are unaffected (verified).
-import type { Api, Model } from "@oh-my-pi/pi-ai";
+import type { Api, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI, ExtensionModelQuery } from "@oh-my-pi/pi-coding-agent";
 import type { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
-import type { SimpleStreamOptions } from "@oh-my-pi/pi-ai";
 
-/** Must match the provider name passed to `pi.registerProvider(...)` in index.ts. */
-const OMP_FUSION_PROVIDER = "omp-fusion";
+/** Must match the provider name passed to `pi.registerProvider(...)` in index.ts. Exported so index.ts imports the same literal — the self-recursion guard below relies on it matching exactly. */
+export const OMP_FUSION_PROVIDER = "omp-fusion";
 
 let modelsFacade: ExtensionModelQuery | undefined;
 let modelRegistry: ModelRegistry | undefined;
@@ -32,17 +31,16 @@ export function captureModelsFacade(pi: ExtensionAPI): void {
 	});
 }
 
-/** Build the `SimpleStreamOptions` (resolved API key) needed to call `completeSimple`/`streamSimple` against an inner model. */
-export function streamOptionsFor(model: Model<Api>): SimpleStreamOptions {
-	if (!modelRegistry) {
-		throw new Error(`omp-fusion: model registry unavailable (session_start has not fired yet) — cannot resolve credentials for ${model.provider}/${model.id}`);
-	}
-	return { apiKey: modelRegistry.resolver(model) };
+/** Build the `SimpleStreamOptions` (resolved API key + signal) needed to call `completeSimple`/`streamSimple` against an inner model. */
+export function streamOptionsFor(model: Model<Api>, signal?: AbortSignal): SimpleStreamOptions {
+	return {
+		apiKey: modelRegistry?.resolver(model),
+		signal,
+	};
 }
 
 export interface ResolvedSlot {
 	model: Model<Api>;
-	/** Human-readable provenance for attribution in panelist/proposer headers, e.g. "fusion_panel_1" or "@slow (built-in default)". */
 	label: string;
 }
 
@@ -51,7 +49,7 @@ export interface ResolvedSlot {
  * Returns `undefined` — never throws — when the role is unconfigured, unauthenticated,
  * or would recurse back into this same provider (self-recursion guard).
  */
-function resolveRole(roleName: string): Model<Api> | undefined {
+function resolveRole(roleName: string): ResolvedSlot | undefined {
 	if (!modelsFacade) {
 		throw new Error(
 			`omp-fusion: model-resolution facade unavailable (session_start has not fired yet). ` +
@@ -65,14 +63,16 @@ function resolveRole(roleName: string): Model<Api> | undefined {
 	if (resolved && resolved.provider === OMP_FUSION_PROVIDER) {
 		return undefined; // never let a panelist/proposer/critic/aggregator/judge resolve back into omp-fusion itself
 	}
-	return resolved;
+	if (!resolved) return undefined;
+	const modelId = resolved.id ? `${resolved.provider}/${resolved.id}` : resolved.provider;
+	return { model: resolved, label: `@${roleName} (${modelId})` };
 }
 
 /** Resolve the first role in `roleNames` (in order) that yields a usable model. */
-function resolveFirst(roleNames: string[]): Model<Api> | undefined {
+function resolveFirst(roleNames: string[]): ResolvedSlot | undefined {
 	for (const roleName of roleNames) {
-		const model = resolveRole(roleName);
-		if (model) return model;
+		const slot = resolveRole(roleName);
+		if (slot) return slot;
 	}
 	return undefined;
 }
@@ -81,8 +81,8 @@ function resolveFirst(roleNames: string[]): Model<Api> | undefined {
 function collectConfigured(roleNames: string[]): ResolvedSlot[] {
 	const slots: ResolvedSlot[] = [];
 	for (const roleName of roleNames) {
-		const model = resolveRole(roleName);
-		if (model) slots.push({ model, label: roleName });
+		const slot = resolveRole(roleName);
+		if (slot) slots.push(slot);
 	}
 	return slots;
 }
@@ -92,8 +92,8 @@ function builtinDefaultPanel(): ResolvedSlot[] {
 	const slow = resolveRole("slow");
 	const def = resolveRole("default");
 	const slots: ResolvedSlot[] = [];
-	if (slow) slots.push({ model: slow, label: "@slow (built-in default)" });
-	if (def) slots.push({ model: def, label: "@default (built-in default)" });
+	if (slow) slots.push({ model: slow.model, label: `@slow (${slow.model.provider}/${slow.model.id}) (built-in default)` });
+	if (def) slots.push({ model: def.model, label: `@default (${def.model.provider}/${def.model.id}) (built-in default)` });
 	return slots;
 }
 
@@ -107,7 +107,7 @@ function cycleToSlots(source: ResolvedSlot[], count: number): ResolvedSlot[] {
 function applyFloorMode(slots: ResolvedSlot[]): ResolvedSlot[] {
 	if (slots.length !== 1) return slots;
 	const only = slots[0]!;
-	return [only, { model: only.model, label: `${only.label} (floor mode, run twice)` }];
+	return [only, { model: only.model, label: `${only.label} (floor mode, run 2)` }];
 }
 
 export interface FusionRoles {
@@ -130,7 +130,7 @@ export function resolveFusionRoles(): FusionRoles {
 		throw new Error("omp-fusion/fusion: could not resolve at least two panel models (configured roles and built-in defaults both unavailable)");
 	}
 
-	return { judge: { model: judge, label: "fusion_judge" }, panel };
+	return { judge, panel };
 }
 
 export interface UltrafusionRoles {
@@ -143,12 +143,19 @@ export interface UltrafusionRoles {
 export function resolveUltrafusionRoles(): UltrafusionRoles {
 	const aggregator = resolveFirst(["ultrafusion_aggregator", "fusion_judge", "slow"]);
 	if (!aggregator) {
-		throw new Error("omp-fusion/ultrafusion: could not resolve an aggregator model");
+		throw new Error("omp-fusion/ultrafusion: could not resolve an aggregator model (ultrafusion_aggregator, fusion_judge, and @slow fallbacks all unavailable)");
 	}
 
 	const fusionPanelFallback = collectConfigured(["fusion_panel_1", "fusion_panel_2", "fusion_panel_3"]);
 
-	let proposers = collectConfigured(["ultrafusion_proposer_1", "ultrafusion_proposer_2", "ultrafusion_proposer_3", "ultrafusion_proposer_4", "ultrafusion_proposer_5", "ultrafusion_proposer_6"]);
+	let proposers = collectConfigured([
+		"ultrafusion_proposer_1",
+		"ultrafusion_proposer_2",
+		"ultrafusion_proposer_3",
+		"ultrafusion_proposer_4",
+		"ultrafusion_proposer_5",
+		"ultrafusion_proposer_6",
+	]);
 	if (proposers.length === 0) proposers = cycleToSlots(fusionPanelFallback, 6);
 	if (proposers.length === 0) proposers = cycleToSlots(builtinDefaultPanel(), 6);
 	proposers = applyFloorMode(proposers);
@@ -160,5 +167,5 @@ export function resolveUltrafusionRoles(): UltrafusionRoles {
 	if (critics.length === 0) critics = cycleToSlots(fusionPanelFallback, 3);
 	if (critics.length === 0) critics = cycleToSlots(builtinDefaultPanel(), 3);
 
-	return { proposers, critics, aggregator: { model: aggregator, label: "ultrafusion_aggregator" } };
+	return { proposers, critics, aggregator };
 }

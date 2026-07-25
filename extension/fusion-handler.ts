@@ -14,6 +14,7 @@ import {
 } from "./shared/prompts";
 import {
 	CHARS_PER_TOKEN_ESTIMATE,
+	DEFAULT_CONTEXT_WINDOW_ESTIMATE,
 	createHandlerStream,
 	extractAnswerText,
 	extractTask,
@@ -25,15 +26,16 @@ import {
 export function fusionStream(
 	model: Model<Api>,
 	context: Context,
-	_options?: SimpleStreamOptions,
+	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-	const task = extractTask(context);
-	const { judge, panel } = resolveFusionRoles();
 	const handlerStream = createHandlerStream(model);
 
 	void (async () => {
 		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
+			const { task, priorMessages } = extractTask(context);
+			const { judge, panel } = resolveFusionRoles();
+
 			handlerStream.progress(
 				`Fusion: fanning out to ${panel.length} panelists: ${panel.map((s) => s.label).join(", ")}`,
 			);
@@ -46,22 +48,27 @@ export function fusionStream(
 							{
 								systemPrompt: [FUSION_PANEL_PROMPT],
 								messages: [
+									...priorMessages,
 									{
 										role: "user",
-										content: task,
+										content: [{ type: "text", text: task }],
 										timestamp: Date.now(),
 									},
-									],
+								],
 							},
-							streamOptionsFor(slot.model),
+							streamOptionsFor(slot.model, options?.signal),
 						);
 						innerUsages.push(response.usage);
 						const text = extractAnswerText(response);
 						if (response.stopReason === "error" || text === "") {
+							const reason = response.errorMessage ?? (text === "" ? "returned empty output" : "stopReason=error");
+							handlerStream.progress(`Fusion: panelist ${slot.label} failed: ${reason}`);
 							return undefined;
 						}
 						return { index: i + 1, label: slot.label, text };
-					} catch {
+					} catch (err) {
+						const msg = err instanceof Error ? err.message : String(err);
+						handlerStream.progress(`Fusion: panelist ${slot.label} failed: ${msg}`);
 						return undefined;
 					}
 				}),
@@ -81,15 +88,15 @@ export function fusionStream(
 						sumUsage(innerUsages),
 					);
 				} else {
-					handlerStream.finish(
-						"[Fusion: panel produced no usable answers — judge synthesis skipped.]",
-						sumUsage(innerUsages),
+					handlerStream.fail(
+						"error",
+						"Fusion: all panel models failed to produce an answer.",
 					);
 				}
 				return;
 			}
-
-			const maxChars = (judge.model.contextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * survivors.length);
+			const judgeContextWindow = judge.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW_ESTIMATE;
+			const maxChars = (judgeContextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * survivors.length);
 			const judgeInput =
 				`=== ORIGINAL TASK ===\n${task}\n\n` +
 				survivors
@@ -103,20 +110,21 @@ export function fusionStream(
 					)
 					.join("\n\n");
 
-			handlerStream.progress("Fusion: judge synthesizing...");
+			handlerStream.progress(`Fusion: judge ${judge.label} synthesizing...`);
 			const judgeResult = await completeSimple(
 				judge.model,
 				{
 					systemPrompt: [FUSION_JUDGE_PROMPT],
 					messages: [
+						...priorMessages,
 						{
 							role: "user",
-							content: judgeInput,
+							content: [{ type: "text", text: judgeInput }],
 							timestamp: Date.now(),
 						},
 					],
 				},
-				streamOptionsFor(judge.model),
+				streamOptionsFor(judge.model, options?.signal),
 			);
 
 			if (judgeResult.stopReason === "error") {
@@ -129,10 +137,7 @@ export function fusionStream(
 
 			const finalText = extractAnswerText(judgeResult);
 			if (finalText === "") {
-				handlerStream.fail(
-					"error",
-					`Fusion judge returned an empty answer.`,
-				);
+				handlerStream.fail("error", "Fusion judge returned an empty answer.");
 				return;
 			}
 
