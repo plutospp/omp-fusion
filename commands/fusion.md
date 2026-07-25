@@ -1,7 +1,7 @@
 ---
 name: fusion
-description: Run a question through the Fusion panel→judge pipeline using your configured panel (modelRoles fusion_panel_*/fusion_judge), or defaults. Supports --panel m1,m2,... , --judge m, and --analysis-only.
-argument-hint: <your question>  [--panel m1,m2,...] [--judge m] [--analysis-only]
+description: "Run a question through the Fusion panel -> judge pipeline using your configured panel (modelRoles fusion_panel_*/fusion_judge), or defaults. Supports --panel m1,m2,... , --judge m, and --analysis-only."
+argument-hint: "<your question>  [--panel m1,m2,...] [--judge m] [--analysis-only]"
 ---
 Invoke the **fusion** skill on the task below.
 

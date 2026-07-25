@@ -1,7 +1,7 @@
 ---
 name: fusion-pair
-description: Fusion two-model panel — fusion_panel_1 + fusion_panel_2 (default a cross-family pair), judged by fusion_judge. One of each family, in parallel.
-argument-hint: <your question>
+description: "Fusion two-model panel — fusion_panel_1 + fusion_panel_2 (default a cross-family pair), judged by fusion_judge. One of each family, in parallel."
+argument-hint: "<your question>"
 ---
 Invoke the **fusion** skill on the task below, forcing a two-model panel:
 

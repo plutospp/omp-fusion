@@ -1,7 +1,7 @@
 ---
 name: fusion-solo
-description: Fusion floor mode — run the SAME strong model twice as two independent cold panelists, judged by the same strong model. Always available; needs no extra providers.
-argument-hint: <your question>
+description: "Fusion floor mode — run the SAME strong model twice as two independent cold panelists, judged by the same strong model. Always available; needs no extra providers."
+argument-hint: "<your question>"
 ---
 Invoke the **fusion** skill on the task below, forcing the floor panel:
 

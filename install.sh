@@ -73,18 +73,21 @@ fi
 [ -n "$AGENT_DIR" ] || { echo "error: agent dir resolved empty (check OMP_AGENT_DIR / --dir)" >&2; exit 1; }
 
 echo "Installing Fusion into: $AGENT_DIR"
-mkdir -p "$AGENT_DIR/skills" "$AGENT_DIR/agents" "$AGENT_DIR/commands"
+mkdir -p "$AGENT_DIR/skills" "$AGENT_DIR/agents" "$AGENT_DIR/commands" "$AGENT_DIR/extensions/omp-fusion"
 
-# skill (whole dir)
-rm -rf "$AGENT_DIR/skills/fusion"
+# skills (fusion + ultrafusion)
+rm -rf "$AGENT_DIR/skills/fusion" "$AGENT_DIR/skills/ultrafusion"
 cp -R "$HERE/skills/fusion" "$AGENT_DIR/skills/fusion"
+if [ -d "$HERE/skills/ultrafusion" ]; then
+  cp -R "$HERE/skills/ultrafusion" "$AGENT_DIR/skills/ultrafusion"
+fi
 
-# agents + commands (individual files only)
-cp "$HERE/agents/fusion-panel.md"  "$AGENT_DIR/agents/fusion-panel.md"
-cp "$HERE/agents/fusion-judge.md"  "$AGENT_DIR/agents/fusion-judge.md"
-for f in fusion fusion-solo fusion-pair fusion-trio; do
-  cp "$HERE/commands/$f.md" "$AGENT_DIR/commands/$f.md"
-done
+# agents + commands (all markdown files)
+cp "$HERE/agents/"*.md "$AGENT_DIR/agents/"
+cp "$HERE/commands/"*.md "$AGENT_DIR/commands/"
+if [ -d "$HERE/extension" ]; then
+  cp -R "$HERE/extension/." "$AGENT_DIR/extensions/omp-fusion/"
+fi
 
 echo "Installed:"
 echo "  skill    : $AGENT_DIR/skills/fusion"

@@ -1,7 +1,7 @@
 ---
 name: fusion-trio
-description: Fusion three-model panel — fusion_panel_1 + fusion_panel_2 + fusion_panel_3 (default three families), judged by fusion_judge. The richest panel.
-argument-hint: <your question>
+description: "Fusion three-model panel — fusion_panel_1 + fusion_panel_2 + fusion_panel_3 (default three families), judged by fusion_judge. The richest panel."
+argument-hint: "<your question>"
 ---
 Invoke the **fusion** skill on the task below, forcing a three-model panel:
 

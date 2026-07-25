@@ -1,7 +1,7 @@
 ---
 name: ultrafusion
-description: Plan a task through the Ultrafusion pipeline — six independent proposer plans in parallel, three parallel critic comments (consensus / contradictions / unique opinions / recommendation), then an aggregator integrates the comments into one final plan. Configure via modelRoles ultrafusion_proposer_1..6 / ultrafusion_critic_1..3 / ultrafusion_aggregator; supports --proposers, --critics, --aggregator.
-argument-hint: <task to plan>  [--proposers m1,m2,...] [--critics m1,m2,...] [--aggregator m]
+description: "Plan a task through the Ultrafusion pipeline — six independent proposer plans in parallel, three parallel critic comments (consensus / contradictions / unique opinions / recommendation), then an aggregator integrates the comments into one final plan. Configure via modelRoles ultrafusion_proposer_1..6 / ultrafusion_critic_1..3 / ultrafusion_aggregator; supports --proposers, --critics, --aggregator."
+argument-hint: "<task to plan>  [--proposers m1,m2,...] [--critics m1,m2,...] [--aggregator m]"
 ---
 Invoke the **ultrafusion** skill on the task below.
 
