@@ -13,6 +13,9 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 - `raceToMajority` helper in `extension/shared/stream.ts` — generic majority-quorum race with
   per-task child `AbortController`, failure-aware unreachable-quorum detection, and parent-abort
   propagation.
+- **`omp-fusion/fusion-samp`** — randomly samples a majority subset of proposers upfront
+  (`floor(N/2)+1`), runs only those, and aggregates. Cheaper than fusion-fast (fewer API calls,
+  no wasted straggler tokens). Same roles, same aggregator degraded mode.
 
 - OMP **plugin mode**: `package.json` with dual `omp` + `pi` manifest so Fusion installs as an OMP
   plugin (`omp plugin link`/`install`) — `skills/` + `commands/` auto-discovered. In plugin mode the
