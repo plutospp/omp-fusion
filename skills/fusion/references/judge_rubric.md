@@ -22,7 +22,9 @@ for the artifact and fold the analysis into a short merge rationale.
 
 You are integrating the panelists' *implementations* into one working result, not writing a report.
 
-1. **Understand each candidate.** Read every panelist's artifact.
+1. **Materialize each candidate.** Panelists verified their own artifact via ephemeral bash execution
+   (no file-write tools, so nothing is persisted) and returned it as text (fenced code blocks). Write
+   each candidate to its own scratch path (e.g. `.fusion/judge/candidate-N/`) before running it.
 2. **Run them.** Use bash to actually execute each candidate and observe what works and what breaks.
    Decide what to keep based on **observed behavior**, not on which looks nicer.
 3. **Resolve disagreements by evidence.** Where candidates differ, prefer the one whose behavior you

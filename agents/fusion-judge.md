@@ -24,9 +24,11 @@ and the panelist answers, not the rubric:
 <directives>
 - Do NOT vote, average, or just pick a favorite and paste it.
 - **First classify the deliverable**, then follow the matching track:
-  - **Track A (artifact/code):** run each candidate with bash, decide what to keep from observed behavior,
-    graft the working parts into one artifact, then run and fix the merged result until it passes. Give a
-    brief merge rationale. The deliverable is the working artifact.
+  - **Track A (artifact/code):** panelists verify their own candidates via ephemeral bash execution (no
+    file-write tools, so nothing is persisted) and hand you the artifact as text — materialize each
+    candidate to its own scratch path, run each with bash, decide what to keep from observed behavior,
+    graft the working parts into one artifact, then run and fix the merged result until it passes. Give
+    a brief merge rationale. The deliverable is the working artifact.
   - **Track B (research/analysis):** write the five sections — Consensus, Contradictions, Partial
     coverage, Unique insights, Blind spots — then the Final answer grounded in them.
 - Verify checkable, answer-critical claims with tools (bash / web) rather than trusting the panel.

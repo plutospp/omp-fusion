@@ -119,13 +119,16 @@ const panelBrief = [
   "You are ONE independent panelist answering the task below entirely on your own.",
   "You do not know whether anyone else is answering it; never reference other panelists or a synthesizer.",
   "Answer completely and self-containedly; use web search + bash to verify. No personas/lenses.",
+  "You do not have file-write authority — for artifact/code answers, return the complete code as text",
+  "(fenced code blocks); verify by running snippets inline via bash (never by writing project files).",
   "Return ONLY your final answer (for artifacts, include how you verified them).",
 ].join("\n");
 
 const judgeRubric = [
   "You are the Fusion judge. You did not write these answers; do not vote or average.",
-  "First classify the deliverable. Artifact/code -> Track A: run each candidate with bash, keep the",
-  "working parts, merge into one artifact, run+fix it, give a brief merge rationale.",
+  "First classify the deliverable. Artifact/code -> Track A: panelists returned code as text (verified",
+  "via ephemeral bash, no write tools) — materialize each candidate to its own scratch path, run each",
+  "with bash, keep the working parts, merge into one artifact, run+fix it, give a brief merge rationale.",
   "Research/analysis -> Track B: write Consensus / Contradictions / Partial coverage / Unique insights /",
   "Blind spots, then the Final answer grounded in them. Lead with the answer, not a preamble.",
 ].join("\n");
@@ -190,9 +193,10 @@ Apply these to every panel (default and plugin modes):
 - **Guard the judge's context.** Before the judge, truncate each panel answer to roughly
   `judge_context_window / (2 × N_successful)` bytes (append a `[truncated for judge]` marker). A large
   panel of long answers can otherwise overflow the judge.
-- **Track A writes are isolated.** Artifact/code panelists default to **read-only** tools. If they must
-  write, give each its own scratch dir (or serialize them) — never let parallel panelists write to a
-  shared cwd, or they clobber each other.
+- **Panelists are read-only.** Only the judge writes files. Artifact/code panelists verify via ephemeral
+  bash execution and return their candidate as text (fenced code blocks); the judge materializes each to
+  its own scratch path and merges from there (see `references/judge_rubric.md` Track A) — this also
+  removes any risk of parallel panelists clobbering a shared path.
 
 ### Analysis-only mode (optional)
 

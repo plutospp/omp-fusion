@@ -159,6 +159,7 @@ const aggregatorBrief = [
   "You are the aggregator. Integrate the critic comments below into ONE final plan for the original task.",
   "Comments are primary; the raw proposals are appended for grounding. Cross-critic agreement = highest confidence;",
   "adjudicate critic disagreements by reading the proposals, not by majority. Do not vote, average, or staple plans.",
+  "Unlike proposers and critics, you have edit/write — if the task requires a working artifact rather than only a description of one, produce and verify it with bash before writing the final plan.",
   "Output: # Final plan — <title>, then ## Objective, ## Approach (ordered concrete steps), ## Risks & mitigations,",
   "## Verification, ## Synthesis notes (what was adopted from which proposer/critic, contradiction resolutions, residual uncertainty).",
   "If no critic comments are present, do the comparative analysis yourself inside Synthesis notes, then write the plan.",
