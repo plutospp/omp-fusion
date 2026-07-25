@@ -24,11 +24,28 @@ All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 - `docs/CROSS-COMPAT.md` now cites **`synthetic-recon/pi-fusion`** (npm, MIT) as the proven pi-native
   reference extension (panel→judge via pi's `ModelRegistry` + a concurrency limiter); pi users can
   `pi install npm:pi-fusion` while `omp-fusion` stays the OMP-native skill.
+- **Ultrafusion**: a companion three-wave planning pipeline — 6 proposers plan the verbatim task
+  independently in parallel, 3 critics (blind to each other) each read every proposal and return a
+  structured comment (Consensus / Contradictions / Unique opinions / Recommendation), then 1 aggregator
+  integrates the comments into one final plan. Ships `skills/ultrafusion/SKILL.md` + `critic_rubric.md` +
+  `aggregator_rubric.md`, `agents/ultrafusion-{proposer,critic,aggregator}.md`, and `/ultrafusion`.
+  Models resolve via `ultrafusion_proposer_1..6`/`ultrafusion_critic_1..3`/`ultrafusion_aggregator`
+  `modelRoles`, falling back to the existing `fusion_panel_*`/`fusion_judge` roles cycled to fill the
+  slots, then to built-in defaults. Same robustness posture as Fusion: empty proposals/comments are
+  dropped before the next wave, fewer than two surviving proposals skips straight to returning the
+  single plan, and the aggregator runs a degraded self-analysis mode if every critic fails.
+- `scripts/detect_panel.sh` now also prints the suggested `ultrafusion_*` roles, cycling the detected
+  cross-family panel into the 6 proposer + 3 critic slots.
 
 ### Changed
 - `docs/PR-TO-OH-MY-PI.md` rewritten to the **verified OMP reality** — removed the Claude-Code
   marketplace-plugin framing (that provider is `claude-plugins`, disabled here); documented the real
   paths (userland install, OMP plugin, agents-only core PR) and the `agents/`-not-discovered constraint.
+
+### Fixed
+- `skills/fusion/SKILL.md`'s `eval` examples passed `agentType:` to `agent()`, a stale option key; the
+  current OMP eval prelude takes `agent:`. Left uncorrected, panel/judge spawns silently mis-resolve.
+  Corrected all four call sites (panel fan-out, judge call, and both plugin-mode `task`-agent spawns).
 
 ## [0.1.0]
 
