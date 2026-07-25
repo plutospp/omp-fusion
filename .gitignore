@@ -1,0 +1,34 @@
+# Environment / secrets — DO NOT COMMIT
+.env
+.env.*
+!.env.example
+
+# IDE / editor local config
+.idea/
+.vscode/
+*.sw?
+*~
+
+# Local file overrides
+*.local
+
+# Python cache (scripts/ helpers)
+__pycache__/
+*.pyc
+
+# Install / build artifacts
+*.tgz
+*.tar.gz
+node_modules/
+
+# Fusion run provenance (generated at runtime)
+.fusion/
+**/.fusion/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temporary
+*.log
+/tmp/
