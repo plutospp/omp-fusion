@@ -39,14 +39,22 @@ Each harness has its own vanilla install path. `install.sh` just wraps them.
 git clone https://github.com/jms830/omp-fusion ~/github/omp-fusion
 cd ~/github/omp-fusion
 
-# vanilla OMP plugin — omp links the repo and auto-discovers skill + commands (task-agent mode)
+# vanilla OMP plugin — omp links the repo and auto-discovers skills + commands + extension
 ./install.sh --plugin              # = omp plugin link "$PWD"
 # published copy instead: omp plugin install git:github.com/jms830/omp-fusion
 
-# OR full custom-agent mode (copies skill + fusion-panel/fusion-judge agents + commands):
+# OR copy mode (no CLI needed — copies skills, agents, commands, and the extension
+# into ~/.omp/agent for custom-agent mode):
 ./install.sh                       # copies into ~/.omp/agent
 # ./install.sh --dir <path>        # or a custom agent dir
 ```
+
+Copy mode installs:
+- `skills/fusion` + `skills/ultrafusion` (both orchestration skills)
+- `agents/*.md` (fusion-panel, fusion-judge, ultrafusion-proposer/critic/aggregator)
+- `commands/*.md` (all slash entry points)
+- `extension/` → `~/.omp/agent/extensions/omp-fusion/` (the `omp-fusion` provider —
+  `omp-fusion/fusion`, `fusion-fast`, `fusion-samp`, `ultrafusion` as ordinary models)
 
 **vanilla pi** (experimental — install only; the parallel fan-out is OMP-native, see
 [`docs/CROSS-COMPAT.md`](docs/CROSS-COMPAT.md)):
@@ -111,9 +119,9 @@ models", "second/third opinion in parallel", etc.
 
 All four pipelines also register as ordinary models — `omp-fusion/fusion`, `omp-fusion/fusion-fast`,
 `omp-fusion/fusion-samp`, and `omp-fusion/ultrafusion` — via an OMP extension shipped inside this
-same plugin (`extension/`, declared in `package.json`'s
-`omp.extensions`). No separate install step: if the plugin is installed, the provider is live. Use them
-anywhere OMP accepts a model string:
+repo (`extension/`). In plugin mode it's declared in `package.json`'s `omp.extensions`; in copy mode
+`install.sh` places it at `~/.omp/agent/extensions/omp-fusion/`. Either way, no separate install step.
+Use them anywhere OMP accepts a model string:
 
 ```bash
 omp -p "Should we use Kafka or SQS?" --model omp-fusion/fusion
@@ -127,7 +135,7 @@ modelRoles:
   fusion_judge: omp-fusion/fusion   # e.g. use Fusion's judged answer as another role's model
 ```
 
-`/model` and `omp models` list both. Role resolution follows the same precedence as the slash commands
+`/model` and `omp models` list all four. Role resolution follows the same precedence as the slash commands
 (configured roles → cycled fusion-panel fallback for Ultrafusion → built-in defaults), minus the
 `--panel`/`--judge`/`--proposers`/`--critics`/`--aggregator`/`--analysis-only` invocation flags, which have
 no equivalent for a raw model call. A resolved role that points back at `omp-fusion/*` is always rejected

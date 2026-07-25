@@ -90,9 +90,10 @@ if [ -d "$HERE/extension" ]; then
 fi
 
 echo "Installed:"
-echo "  skill    : $AGENT_DIR/skills/fusion"
-echo "  agents   : fusion-panel, fusion-judge"
-echo "  commands : /fusion /fusion-solo /fusion-pair /fusion-trio"
+echo "  skills   : fusion, ultrafusion"
+echo "  agents   : fusion-panel, fusion-judge, ultrafusion-{proposer,critic,aggregator}"
+echo "  commands : /fusion /fusion-solo /fusion-pair /fusion-trio /ultrafusion"
+echo "  extension: $AGENT_DIR/extensions/omp-fusion (omp-fusion/fusion, fusion-fast, fusion-samp, ultrafusion)"
 echo
 
 # suggest modelRoles
