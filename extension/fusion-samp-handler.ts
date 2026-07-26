@@ -7,10 +7,10 @@ import type {
 	Model,
 	SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
-import { resolveUltrafusionRoles, streamOptionsFor } from "./shared/models";
+import { resolveRoles, streamOptionsFor } from "./shared/models";
 import {
-	ULTRAFUSION_AGGREGATOR_PROMPT,
-	ULTRAFUSION_PROPOSER_PROMPT,
+	FUSION_AGGREGATOR_PROMPT,
+	FUSION_PROPOSER_PROMPT,
 } from "./shared/prompts";
 import {
 	CHARS_PER_TOKEN_ESTIMATE,
@@ -32,7 +32,7 @@ function shuffled<T>(arr: readonly T[]): T[] {
 	return out;
 }
 
-/** Fusion-samp: randomly sample a majority of proposers, run them, aggregate (no critics, no race). */
+/** Fusion-samp: randomly sample a majority of proposers, run them, aggregate. */
 export function fusionSampStream(
 	model: Model<Api>,
 	context: Context,
@@ -44,7 +44,7 @@ export function fusionSampStream(
 		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
 			const { task, priorMessages } = extractTask(context);
-			const { proposers, aggregator } = resolveUltrafusionRoles();
+			const { proposers, aggregator } = resolveRoles("fusion-samp");
 			const majority = Math.floor(proposers.length / 2) + 1;
 			const sampled = shuffled(proposers.map((slot, i) => ({ slot, origIndex: i }))).slice(0, majority);
 
@@ -58,7 +58,7 @@ export function fusionSampStream(
 						const response = await completeSimple(
 							slot.model,
 							{
-								systemPrompt: [ULTRAFUSION_PROPOSER_PROMPT],
+								systemPrompt: [FUSION_PROPOSER_PROMPT],
 								messages: [
 									...priorMessages,
 									{
@@ -135,7 +135,7 @@ export function fusionSampStream(
 			const aggregatorResult = await completeSimple(
 				aggregator.model,
 				{
-					systemPrompt: [ULTRAFUSION_AGGREGATOR_PROMPT],
+					systemPrompt: [FUSION_AGGREGATOR_PROMPT],
 					messages: [
 						...priorMessages,
 						{

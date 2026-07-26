@@ -60,21 +60,20 @@ done
 JUDGE="$SLOW"
 
 echo "modelRoles:"
-echo "  fusion_judge:   $JUDGE"
+echo "  fusion_aggregator: $JUDGE"
 i=1
 for m in "${PANEL[@]}"; do
-  printf '  fusion_panel_%d: %s\n' "$i" "$m"
+  printf '  fusion_proposer_%d: %s\n' "$i" "$m"
   i=$((i + 1))
 done
 
-# Ultrafusion suggestion: cycle the cross-family panel into 6 proposer + 3 critic slots; aggregator = judge.
+# Ultrafusion suggestion: cycle the cross-family panel into 6 explorer + 6 proposer slots.
 NP=${#PANEL[@]}
-echo "  ultrafusion_aggregator: $JUDGE"
 for i in 1 2 3 4 5 6; do
-  printf '  ultrafusion_proposer_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
+  printf '  fusion_explorer_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
 done
-for i in 1 2 3; do
-  printf '  ultrafusion_critic_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
+for i in 1 2 3 4 5 6; do
+  printf '  fusion_proposer_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
 done
 
 if [ "${#PANEL[@]}" -lt 2 ]; then

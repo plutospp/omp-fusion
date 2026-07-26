@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
@@ -34,8 +35,7 @@
     "url": "git+https://github.com/jms830/omp-fusion.git"
   },
   "omp": {
-    "name": "fusion",
-    "description": "Independent parallel model panel -> judge synthesis, plus an /ultrafusion planning pipeline (N proposers -> M critics -> aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled `task` agent in plugin mode, so no custom-agent install is required. Configure via modelRoles (fusion_panel_*/fusion_judge and ultrafusion_proposer_*/ultrafusion_critic_*/ultrafusion_aggregator). Also registers an `omp-fusion` provider with four models: omp-fusion/fusion (panel->judge), fusion-fast (majority-quorum proposers->aggregator), fusion-samp (random-sampled proposers->aggregator), and ultrafusion (proposers->critics->aggregator).",
+    "description": "Independent parallel model proposers then aggregator synthesis, plus an /ultrafusion planning pipeline (explorers then proposers then aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled task agent in plugin mode, so no custom-agent install is required. Configure via modelRoles (fusion_proposer_1..N / fusion_explorer_1..N / fusion_aggregator; legacy fusion_panel_1..N / fusion_judge / ultrafusion_proposer_1..6 / ultrafusion_critic_1..3 / ultrafusion_aggregator keys remain as deprecated fallbacks). Also registers an omp-fusion provider with four models: omp-fusion/fusion (proposers->aggregator), fusion-fast (majority-quorum proposers->aggregator), fusion-samp (random-sampled proposers->aggregator), and ultrafusion (explorers->proposers->aggregator).",
     "extensions": [
       "./extension/index.ts"
     ]

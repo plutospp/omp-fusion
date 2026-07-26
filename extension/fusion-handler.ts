@@ -7,10 +7,10 @@ import type {
 	Model,
 	SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
-import { resolveFusionRoles, streamOptionsFor } from "./shared/models";
+import { resolveRoles, streamOptionsFor } from "./shared/models";
 import {
-	FUSION_JUDGE_PROMPT,
-	FUSION_PANEL_PROMPT,
+	FUSION_AGGREGATOR_PROMPT,
+	FUSION_PROPOSER_PROMPT,
 } from "./shared/prompts";
 import {
 	CHARS_PER_TOKEN_ESTIMATE,
@@ -22,7 +22,7 @@ import {
 	truncateForContext,
 } from "./shared/stream";
 
-/** Fusion panel -> judge pipeline: fan the task to independent panelists, then synthesize. */
+/** Fusion proposers -> aggregator pipeline: fan the task to independent proposers, then synthesize. */
 export function fusionStream(
 	model: Model<Api>,
 	context: Context,
@@ -34,19 +34,19 @@ export function fusionStream(
 		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
 			const { task, priorMessages } = extractTask(context);
-			const { judge, panel } = resolveFusionRoles();
+			const { proposers, aggregator } = resolveRoles("fusion");
 
 			handlerStream.progress(
-				`Fusion: fanning out to ${panel.length} panelists: ${panel.map((s) => s.label).join(", ")}`,
+				`Fusion: fanning out to ${proposers.length} proposers: ${proposers.map((s) => s.label).join(", ")}`,
 			);
 
 			const results = await Promise.all(
-				panel.map(async (slot, i) => {
+				proposers.map(async (slot, i) => {
 					try {
 						const response = await completeSimple(
 							slot.model,
 							{
-								systemPrompt: [FUSION_PANEL_PROMPT],
+								systemPrompt: [FUSION_PROPOSER_PROMPT],
 								messages: [
 									...priorMessages,
 									{
@@ -62,13 +62,13 @@ export function fusionStream(
 						const text = extractAnswerText(response);
 						if (response.stopReason === "error" || text === "") {
 							const reason = response.errorMessage ?? (text === "" ? "returned empty output" : "stopReason=error");
-							handlerStream.progress(`Fusion: panelist ${slot.label} failed: ${reason}`);
+							handlerStream.progress(`Fusion: proposer ${slot.label} failed: ${reason}`);
 							return undefined;
 						}
 						return { index: i + 1, label: slot.label, text };
 					} catch (err) {
 						const msg = err instanceof Error ? err.message : String(err);
-						handlerStream.progress(`Fusion: panelist ${slot.label} failed: ${msg}`);
+						handlerStream.progress(`Fusion: proposer ${slot.label} failed: ${msg}`);
 						return undefined;
 					}
 				}),
@@ -78,72 +78,72 @@ export function fusionStream(
 				(r): r is { index: number; label: string; text: string } => r !== undefined,
 			);
 			handlerStream.progress(
-				`Fusion: ${survivors.length}/${panel.length} panelists returned.`,
+				`Fusion: ${survivors.length}/${proposers.length} proposers returned.`,
 			);
 
 			if (survivors.length < 2) {
 				if (survivors.length === 1) {
 					handlerStream.finish(
-						`${survivors[0].text}\n\n[Fusion: panel degraded to 1 answer — judge synthesis skipped.]`,
+						`${survivors[0].text}\n\n[Fusion: proposer stage degraded to 1 answer — aggregator synthesis skipped.]`,
 						sumUsage(innerUsages),
 					);
 				} else {
 					handlerStream.fail(
 						"error",
-						"Fusion: all panel models failed to produce an answer.",
+						"Fusion: all proposer models failed to produce an answer.",
 					);
 				}
 				return;
 			}
-			const judgeContextWindow = judge.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW_ESTIMATE;
-			const maxChars = (judgeContextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * survivors.length);
-			const judgeInput =
+			const aggregatorContextWindow = aggregator.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW_ESTIMATE;
+			const maxChars = (aggregatorContextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * survivors.length);
+			const aggregatorInput =
 				`=== ORIGINAL TASK ===\n${task}\n\n` +
 				survivors
 					.map(
 						(s) =>
-							`=== PANELIST ${s.index} (model: ${s.label}) ===\n${truncateForContext(
+							`=== PROPOSER ${s.index} (model: ${s.label}) ===\n${truncateForContext(
 								s.text,
 								maxChars,
-								"[truncated for judge]",
+								"[truncated for aggregator]",
 							)}`,
 					)
 					.join("\n\n");
 
-			handlerStream.progress(`Fusion: judge ${judge.label} synthesizing...`);
-			const judgeResult = await completeSimple(
-				judge.model,
+			handlerStream.progress(`Fusion: aggregator ${aggregator.label} synthesizing...`);
+			const aggregatorResult = await completeSimple(
+				aggregator.model,
 				{
-					systemPrompt: [FUSION_JUDGE_PROMPT],
+					systemPrompt: [FUSION_AGGREGATOR_PROMPT],
 					messages: [
 						...priorMessages,
 						{
 							role: "user",
-							content: [{ type: "text", text: judgeInput }],
+							content: [{ type: "text", text: aggregatorInput }],
 							timestamp: Date.now(),
 						},
 					],
 				},
-				streamOptionsFor(judge.model, options?.signal),
+				streamOptionsFor(aggregator.model, options?.signal),
 			);
 
-			if (judgeResult.stopReason === "error") {
+			if (aggregatorResult.stopReason === "error") {
 				handlerStream.fail(
 					"error",
-					`Fusion judge call failed: ${judgeResult.errorMessage ?? "stopReason=error"}`,
+					`Fusion aggregator call failed: ${aggregatorResult.errorMessage ?? "stopReason=error"}`,
 				);
 				return;
 			}
 
-			const finalText = extractAnswerText(judgeResult);
+			const finalText = extractAnswerText(aggregatorResult);
 			if (finalText === "") {
-				handlerStream.fail("error", "Fusion judge returned an empty answer.");
+				handlerStream.fail("error", "Fusion aggregator returned an empty answer.");
 				return;
 			}
 
 			handlerStream.finish(
 				finalText,
-				sumUsage([...innerUsages, judgeResult.usage]),
+				sumUsage([...innerUsages, aggregatorResult.usage]),
 			);
 		} catch (err) {
 			handlerStream.fail(

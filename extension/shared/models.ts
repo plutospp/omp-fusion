@@ -1,8 +1,14 @@
-// Model-role resolution for the `omp-fusion` provider, mirroring the
+// Unified model-role resolution for the `omp-fusion` provider, mirroring the
 // precedence documented in skills/fusion/SKILL.md §1 and
 // skills/ultrafusion/SKILL.md §1 — minus the "explicit invocation override"
 // tier (`--panel`/`--judge`/etc.), which has no equivalent when omp-fusion is
 // invoked as an ordinary model rather than through a slash command.
+//
+// One role namespace serves every pipeline: `fusion_aggregator`,
+// `fusion_explorer_1..6`, `fusion_proposer_1..6`. The deprecated
+// `ultrafusion_*` and `fusion_panel_*`/`fusion_judge` keys remain as a
+// per-pipeline LEGACY fallback tier (see the LEGACY_* tables below) so
+// existing configs keep resolving the same models to the same wave positions.
 //
 // KNOWN LIMITATION: role resolution depends on the `session_start` extension
 // event to capture a model-resolution facade (see `captureModelsFacade`
@@ -23,6 +29,15 @@ export const OMP_FUSION_PROVIDER = "omp-fusion";
 let modelsFacade: ExtensionModelQuery | undefined;
 let modelRegistry: ModelRegistry | undefined;
 
+
+/**
+ * TEST-ONLY seam. `captureModelsFacade` is the production path (fires at
+ * `session_start`); unit tests inject a fake facade here instead, since
+ * `resolveRole` throws without one and no session ever starts under `bun test`.
+ */
+export function setModelsFacadeForTesting(facade: ExtensionModelQuery | undefined): void {
+	modelsFacade = facade;
+}
 /** Captures the session's model-resolution facade and registry. Call once, at extension load, before any provider request can occur. */
 export function captureModelsFacade(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
@@ -61,7 +76,7 @@ function resolveRole(roleName: string): ResolvedSlot | undefined {
 	}
 	const resolved = modelsFacade.resolve(`@${roleName}`);
 	if (resolved && resolved.provider === OMP_FUSION_PROVIDER) {
-		return undefined; // never let a panelist/proposer/critic/aggregator/judge resolve back into omp-fusion itself
+		return undefined; // never let an explorer/proposer/aggregator resolve back into omp-fusion itself
 	}
 	if (!resolved) return undefined;
 	const modelId = resolved.id ? `${resolved.provider}/${resolved.id}` : resolved.provider;
@@ -110,62 +125,131 @@ function applyFloorMode(slots: ResolvedSlot[]): ResolvedSlot[] {
 	return [only, { model: only.model, label: `${only.label} (floor mode, run 2)` }];
 }
 
-export interface FusionRoles {
-	judge: ResolvedSlot;
-	panel: ResolvedSlot[]; // length >= 2
-}
+/** Which pipeline is resolving — selects the LEGACY fallback tier, because the same deprecated key sits in a different wave in different pipelines. */
+export type FusionShape = "fusion" | "fusion-fast" | "fusion-samp" | "ultrafusion";
 
-/** Resolve Fusion's judge + panel per skills/fusion/SKILL.md §1 (configured roles -> built-in defaults; floor mode below 2). */
-export function resolveFusionRoles(): FusionRoles {
-	const judge = resolveFirst(["fusion_judge", "slow"]);
-	if (!judge) {
-		throw new Error("omp-fusion/fusion: could not resolve a judge model (fusion_judge role and @slow fallback both unavailable)");
-	}
-
-	let panel = collectConfigured(["fusion_panel_1", "fusion_panel_2", "fusion_panel_3"]);
-	if (panel.length === 0) panel = builtinDefaultPanel();
-	panel = applyFloorMode(panel);
-
-	if (panel.length < 2) {
-		throw new Error("omp-fusion/fusion: could not resolve at least two panel models (configured roles and built-in defaults both unavailable)");
-	}
-
-	return { judge, panel };
-}
-
-export interface UltrafusionRoles {
-	proposers: ResolvedSlot[]; // length >= 2
-	critics: ResolvedSlot[]; // length >= 0
+export interface ResolvedRoles {
+	/** Ultrafusion only; empty for fusion / fusion-fast / fusion-samp. */
+	explorers: ResolvedSlot[];
+	/** length >= 2 (floor mode). */
+	proposers: ResolvedSlot[];
 	aggregator: ResolvedSlot;
 }
 
-/** Resolve Ultrafusion's proposers/critics/aggregator per skills/ultrafusion/SKILL.md §1 (configured roles -> cycled fusion-panel fallback -> built-in defaults). */
-export function resolveUltrafusionRoles(): UltrafusionRoles {
-	const aggregator = resolveFirst(["ultrafusion_aggregator", "fusion_judge", "slow"]);
+const SLOTS_6 = [1, 2, 3, 4, 5, 6];
+const SLOTS_3 = [1, 2, 3];
+
+/** LEGACY (deprecated): the `ultrafusion_*` / `fusion_panel_*` / `fusion_judge` keys, consulted per-pipeline so existing configs keep resolving the same models to the same wave positions. Canonical `fusion_*` keys always take precedence. */
+const LEGACY_AGGREGATOR = ["ultrafusion_aggregator", "fusion_judge"];
+const LEGACY_FUSION_PANEL = ["fusion_panel_1", "fusion_panel_2", "fusion_panel_3"];
+const LEGACY_ULTRAFUSION_PROPOSERS = SLOTS_6.map((n) => `ultrafusion_proposer_${n}`);
+const LEGACY_ULTRAFUSION_CRITICS = SLOTS_3.map((n) => `ultrafusion_critic_${n}`);
+
+/** One LEGACY fallback tier: resolve `roles` as-is, optionally cycling the result to `cycle` slots (e.g. 3 panel roles → 6 proposer slots). */
+interface LegacyTier {
+	roles: string[];
+	/** Cycle resolved slots to this count. Omit to keep as-is. */
+	cycle?: number;
+}
+
+/**
+ * Per-pipeline LEGACY fallback tiers. The canonical `fusion_proposer_*` /
+ * `fusion_explorer_*` / `fusion_aggregator` keys are global; only this table is
+ * shape-aware. The same deprecated key occupies a different wave in different
+ * pipelines — `ultrafusion_proposer_*` is wave 1 (explorers) in ultrafusion but
+ * the proposer wave in fusion-fast / fusion-samp — so a single global legacy
+ * mapping would silently reroute one pipeline's models.
+ *
+ * `cycle: 6` on `LEGACY_FUSION_PANEL` reproduces today's `cycleToSlots(panelFallback, 6)`
+ * for the six-slot shapes. Fusion keeps `fusion_panel_*` as-is (today: no cycle).
+ */
+const LEGACY_TIERS: Record<FusionShape, { explorers: LegacyTier[]; proposers: LegacyTier[] }> = {
+	fusion: {
+		explorers: [],
+		proposers: [
+			{ roles: LEGACY_FUSION_PANEL },
+			{ roles: LEGACY_ULTRAFUSION_PROPOSERS },
+		],
+	},
+	"fusion-fast": {
+		explorers: [],
+		proposers: [
+			{ roles: LEGACY_ULTRAFUSION_PROPOSERS },
+			{ roles: LEGACY_FUSION_PANEL, cycle: 6 },
+		],
+	},
+	"fusion-samp": {
+		explorers: [],
+		proposers: [
+			{ roles: LEGACY_ULTRAFUSION_PROPOSERS },
+			{ roles: LEGACY_FUSION_PANEL, cycle: 6 },
+		],
+	},
+	ultrafusion: {
+		explorers: [
+			{ roles: LEGACY_ULTRAFUSION_PROPOSERS },
+			{ roles: LEGACY_FUSION_PANEL, cycle: 6 },
+		],
+		proposers: [
+			{ roles: LEGACY_ULTRAFUSION_CRITICS },
+			{ roles: LEGACY_FUSION_PANEL, cycle: 6 },
+		],
+	},
+};
+
+/**
+ * Resolve a wave: canonical roles, then each LEGACY tier in order (cycling when
+ * `tier.cycle` is set), then built-in defaults (cycled to `builtinCycle` when
+ * set, as-is otherwise); floor mode below 2.
+ */
+function resolveWave(roleNames: string[], legacyTiers: LegacyTier[], builtinCycle: number | undefined): ResolvedSlot[] {
+	let slots = collectConfigured(roleNames);
+	for (const tier of legacyTiers) {
+		if (slots.length > 0) break;
+		slots = collectConfigured(tier.roles);
+		if (tier.cycle !== undefined && slots.length > 0) slots = cycleToSlots(slots, tier.cycle);
+	}
+	if (slots.length === 0) {
+		const builtin = builtinDefaultPanel();
+		slots = builtinCycle !== undefined ? cycleToSlots(builtin, builtinCycle) : builtin;
+	}
+	return applyFloorMode(slots);
+}
+
+/**
+ * Unified role resolution for every pipeline. Canonical `fusion_*` keys are
+ * global; the LEGACY `ultrafusion_*` / `fusion_panel_*` / `fusion_judge` keys
+ * are a per-pipeline fallback (see `LEGACY_TIERS`). `explorers` is empty for
+ * the two-wave pipelines; `proposers` is always >= 2 (floor mode); `aggregator`
+ * is exactly one.
+ */
+export function resolveRoles(shape: FusionShape): ResolvedRoles {
+	const tiers = LEGACY_TIERS[shape];
+	// Fusion keeps built-in defaults as-is (2 panelists); six-slot shapes cycle them to 6.
+	const builtinCycle = shape === "fusion" ? undefined : 6;
+
+	const aggregator = resolveFirst(["fusion_aggregator", ...LEGACY_AGGREGATOR, "slow"]);
 	if (!aggregator) {
-		throw new Error("omp-fusion/ultrafusion: could not resolve an aggregator model (ultrafusion_aggregator, fusion_judge, and @slow fallbacks all unavailable)");
+		throw new Error(
+			`omp-fusion/${shape}: could not resolve an aggregator model (fusion_aggregator, ultrafusion_aggregator, fusion_judge, and @slow fallbacks all unavailable)`,
+		);
 	}
 
-	const fusionPanelFallback = collectConfigured(["fusion_panel_1", "fusion_panel_2", "fusion_panel_3"]);
-
-	let proposers = collectConfigured([
-		"ultrafusion_proposer_1",
-		"ultrafusion_proposer_2",
-		"ultrafusion_proposer_3",
-		"ultrafusion_proposer_4",
-		"ultrafusion_proposer_5",
-		"ultrafusion_proposer_6",
-	]);
-	if (proposers.length === 0) proposers = cycleToSlots(fusionPanelFallback, 6);
-	if (proposers.length === 0) proposers = cycleToSlots(builtinDefaultPanel(), 6);
-	proposers = applyFloorMode(proposers);
+	const proposers = resolveWave(
+		SLOTS_6.map((n) => `fusion_proposer_${n}`),
+		tiers.proposers,
+		builtinCycle,
+	);
 	if (proposers.length < 2) {
-		throw new Error("omp-fusion/ultrafusion: could not resolve at least two proposer models (configured roles, fusion-panel fallback, and built-in defaults all unavailable)");
+		throw new Error(
+			`omp-fusion/${shape}: could not resolve at least two proposer models (configured roles, legacy fallbacks, and built-in defaults all unavailable)`,
+		);
 	}
 
-	let critics = collectConfigured(["ultrafusion_critic_1", "ultrafusion_critic_2", "ultrafusion_critic_3"]);
-	if (critics.length === 0) critics = cycleToSlots(fusionPanelFallback, 3);
-	if (critics.length === 0) critics = cycleToSlots(builtinDefaultPanel(), 3);
+	const explorers =
+		shape === "ultrafusion"
+			? resolveWave(SLOTS_6.map((n) => `fusion_explorer_${n}`), tiers.explorers, builtinCycle)
+			: [];
 
-	return { proposers, critics, aggregator };
+	return { explorers, proposers, aggregator };
 }

@@ -7,10 +7,10 @@ import type {
 	Model,
 	SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
-import { resolveUltrafusionRoles, streamOptionsFor } from "./shared/models";
+import { resolveRoles, streamOptionsFor } from "./shared/models";
 import {
-	ULTRAFUSION_AGGREGATOR_PROMPT,
-	ULTRAFUSION_PROPOSER_PROMPT,
+	FUSION_AGGREGATOR_PROMPT,
+	FUSION_PROPOSER_PROMPT,
 } from "./shared/prompts";
 import {
 	CHARS_PER_TOKEN_ESTIMATE,
@@ -23,7 +23,7 @@ import {
 	truncateForContext,
 } from "./shared/stream";
 
-/** Fusion-fast: proposers -> aggregator with majority-quorum early termination (no critics wave). */
+/** Fusion-fast: proposers -> aggregator with majority-quorum early termination. */
 export function fusionFastStream(
 	model: Model<Api>,
 	context: Context,
@@ -35,7 +35,7 @@ export function fusionFastStream(
 		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
 			const { task, priorMessages } = extractTask(context);
-			const { proposers, aggregator } = resolveUltrafusionRoles();
+			const { proposers, aggregator } = resolveRoles("fusion-fast");
 			const majority = Math.floor(proposers.length / 2) + 1;
 
 			handlerStream.progress(
@@ -48,7 +48,7 @@ export function fusionFastStream(
 						const response = await completeSimple(
 							slot.model,
 							{
-								systemPrompt: [ULTRAFUSION_PROPOSER_PROMPT],
+								systemPrompt: [FUSION_PROPOSER_PROMPT],
 								messages: [
 									...priorMessages,
 									{
@@ -126,7 +126,7 @@ export function fusionFastStream(
 			const aggregatorResult = await completeSimple(
 				aggregator.model,
 				{
-					systemPrompt: [ULTRAFUSION_AGGREGATOR_PROMPT],
+					systemPrompt: [FUSION_AGGREGATOR_PROMPT],
 					messages: [
 						...priorMessages,
 						{

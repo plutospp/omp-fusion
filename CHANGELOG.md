@@ -2,6 +2,58 @@
 
 All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 
+## [Unreleased] — Unified role schema
+
+### Changed
+- **Unified role namespace.** All pipelines now resolve from one set of canonical
+  `modelRoles` keys: `fusion_aggregator`, `fusion_explorer_1..6`, `fusion_proposer_1..6`.
+  The deprecated `fusion_panel_*`, `fusion_judge`, `ultrafusion_proposer_*`,
+  `ultrafusion_critic_*`, and `ultrafusion_aggregator` keys remain as per-pipeline
+  LEGACY fallbacks so existing configs keep working without edits.
+- **Pipeline shapes.** `fusion`: proposers then aggregator (was panel then judge).
+  `ultrafusion`: explorers then proposers then aggregator (was proposers then critics
+  then aggregator). `fusion-fast` and `fusion-samp`: proposers then aggregator
+  (unchanged shape, new role names).
+- **Critic duty merged.** The comparative pass (consensus / contradictions / unique
+  opinions) that critics performed is now split: proposers assess upstream explorer
+  findings before committing to a candidate; the aggregator adjudicates across
+  proposals. The `ultrafusion_critic_*` roles map to the proposer wave.
+- **Tool grants.** Explorers and proposers gain the `write` tool for scratch and
+  verification work, contained to `.fusion/scratch/<UTC-timestamp>/<wave>-<slot>/`.
+  Modification of pre-existing files remains forbidden by prompt contract (bash
+  included). The aggregator retains full edit+write authority and is the sole
+  writer of project paths.
+- **Intentional widening.** Ultrafusion proposers' `fusion_panel_*` and built-in
+  fallbacks now fill 6 slots (was 3 for the critics wave). This reflects the
+  wave-identity change (critics to proposers); call counts for that specific config
+  increase from 3 to 6 proposers.
+- **Fusion default-config call count** (clarification, not a change). With no roles
+  configured, `fusion` runs 2 built-in proposers (`@slow` + `@default` as-is); the
+  six-slot shapes (`fusion-fast`, `fusion-samp`, `ultrafusion`) cycle built-ins to 6.
+  This matches the pre-refactor behavior for `fusion` and is unchanged.
+
+### Deprecated
+- `fusion_panel_1..3`, `fusion_judge`, `ultrafusion_proposer_1..6`,
+  `ultrafusion_critic_1..3`, `ultrafusion_aggregator` — LEGACY fallback tier.
+  Removal condition: one minor release after all documented configs migrate to
+  canonical keys.
+
+### Removed
+- `agents/fusion-panel.md`, `agents/fusion-judge.md`,
+  `agents/ultrafusion-proposer.md`, `agents/ultrafusion-critic.md`,
+  `agents/ultrafusion-aggregator.md` — replaced by
+  `agents/fusion-explorer.md`, `agents/fusion-proposer.md`,
+  `agents/fusion-aggregator.md`.
+- `skills/fusion/references/judge_rubric.md`,
+  `skills/ultrafusion/references/critic_rubric.md`,
+  `skills/ultrafusion/references/aggregator_rubric.md` — consolidated into
+  `references/aggregator_rubric.md`.
+
+### Fixed
+- **`commands/fusion.md` YAML parse error** (Known issue, prior release). The description
+  no longer contains the bare `*` (`fusion_panel_*`) or `→` arrow suspected of breaking
+  plugin-mode frontmatter discovery; `/fusion` is usable again.
+
 ## [Unreleased]
 
 ### Added

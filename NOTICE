@@ -16,18 +16,20 @@ What is preserved from the original (the method, credited to duolahypercho):
   - no personas / "lenses"; the verbatim task goes to every panelist.
 
 What changed for OMP (this port):
-  - Panelists and the judge are ordinary OMP subagents (the `task`/`eval`
-    `agent()` path + custom `fusion-panel` / `fusion-judge` agents), not
+  - Proposers, explorers, and the aggregator are ordinary OMP subagents (the `task`/`eval`
+    `agent()` path + custom `fusion-explorer` / `fusion-proposer` / `fusion-aggregator` agents), not
     Claude Code `Agent` subagents or external CLIs.
   - No `run_codex.sh` / `run_gemini.sh` / `agy` shell runners and no
     `command -v` CLI detection. Any provider/model is selectable through OMP's
     native model resolution.
-  - Panel and judge models are configurable via `modelRoles`
-    (`fusion_panel_1..N`, `fusion_judge`) or a per-invocation `--panel`/
-    `--judge` override — the way `/advisor`'s model is configured — instead of
-    being pinned to specific model versions.
-  - The judge is a separate subagent with its own configurable model, so the
-    judge model is chosen independently of the session model.
+  - Proposer, explorer, and aggregator models are configurable via `modelRoles`
+    (`fusion_proposer_1..N`, `fusion_explorer_1..N`, `fusion_aggregator`) or a
+    per-invocation `--proposers`/`--explorers`/`--aggregator` override — the way
+    `/advisor`'s model is configured — instead of being pinned to specific model
+    versions. Legacy keys (`fusion_panel_*`, `fusion_judge`, `ultrafusion_*`)
+    remain as deprecated per-pipeline fallbacks.
+  - The aggregator is a separate subagent with its own configurable model, so the
+    aggregator model is chosen independently of the session model.
 
 Original copyright (c) 2026 duolahypercho. Port copyright (c) 2026 Jordan Strauss.
 Both under the MIT License (see LICENSE).

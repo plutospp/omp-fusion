@@ -35,7 +35,7 @@ export default function ompFusionExtension(pi: ExtensionAPI): void {
 		models: [
 			{
 				id: "fusion",
-				name: "Fusion (panel -> judge)",
+				name: "Fusion (proposers -> aggregator)",
 				reasoning: false,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -44,7 +44,7 @@ export default function ompFusionExtension(pi: ExtensionAPI): void {
 			},
 			{
 				id: "ultrafusion",
-				name: "Ultrafusion (proposers -> critics -> aggregator)",
+				name: "Ultrafusion (explorers -> proposers -> aggregator)",
 				reasoning: false,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

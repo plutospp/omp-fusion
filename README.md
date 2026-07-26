@@ -75,29 +75,26 @@ Then restart the agent (or `/reload`).
 
 ## Configure the models (optional)
 
-With no config, Fusion uses `pi/slow` + `pi/default` as the panel and `pi/slow` as the judge, and
-`/fusion-solo` always works (one strong model run twice). To pick your own panel, add roles to
-`~/.omp/agent/config.yml` — `scripts/detect_panel.sh` prints a suggestion tailored to your existing roles:
+With no config, Fusion uses `pi/slow` + `pi/default` as the proposers and `pi/slow` as the aggregator, and
+`/fusion-solo` always works (one strong model run twice). To pick your own models, add roles to
+~/.omp/agent/config.yml — `scripts/detect_panel.sh` prints a suggestion tailored to your existing roles:
 
 ```yaml
 modelRoles:
-  fusion_judge:   anthropic/claude-opus-4-8:high
-  fusion_panel_1: anthropic/claude-opus-4-8:high
-  fusion_panel_2: openai-codex/gpt-5.5:high
-  fusion_panel_3: google-antigravity/gemini-3.5-flash
-  # Ultrafusion (6 proposers → 3 critics → aggregator). When these are unset, Ultrafusion reuses
-  # fusion_panel_* (cycled to fill the slots) + fusion_judge, then built-in defaults.
-  ultrafusion_aggregator:  anthropic/claude-opus-4-8:high
-  ultrafusion_proposer_1: anthropic/claude-opus-4-8:high
-  ultrafusion_proposer_2: openai-codex/gpt-5.5:high
-  ultrafusion_proposer_3: google-antigravity/gemini-3.5-flash
-  ultrafusion_proposer_4: anthropic/claude-opus-4-8:high
-  ultrafusion_proposer_5: openai-codex/gpt-5.5:high
-  ultrafusion_proposer_6: google-antigravity/gemini-3.5-flash
-  ultrafusion_critic_1:   anthropic/claude-opus-4-8:high
-  ultrafusion_critic_2:   openai-codex/gpt-5.5:high
-  ultrafusion_critic_3:   google-antigravity/gemini-3.5-flash
+  fusion_aggregator:  anthropic/claude-opus-4-8:high
+  fusion_proposer_1: anthropic/claude-opus-4-8:high
+  fusion_proposer_2: openai-codex/gpt-5.5:high
+  fusion_proposer_3: google-antigravity/gemini-3.5-flash
+  # Ultrafusion adds an explorer wave (explorers then proposers then aggregator).
+  # When fusion_explorer_* are unset, Ultrafusion reuses fusion_proposer_* (cycled to 6 slots).
+  fusion_explorer_1: anthropic/claude-opus-4-8:high
+  fusion_explorer_2: openai-codex/gpt-5.5:high
+  fusion_explorer_3: google-antigravity/gemini-3.5-flash
 ```
+
+Legacy keys (`fusion_panel_*`, `fusion_judge`, `ultrafusion_proposer_*`, `ultrafusion_critic_*`,
+`ultrafusion_aggregator`) remain as deprecated per-pipeline fallbacks, so existing configs keep working
+without edits.
 
 Any OMP model string or `pi/<role>` alias works (with optional `:thinking` suffix). Unavailable providers
 fall back via OMP's native provider fallback. (Note: `google-antigravity` serves `gemini-3.5-flash`, not a
@@ -105,13 +102,13 @@ Pro tier — authenticate `google-vertex` / `google-gemini-cli` if you want a Pr
 
 ## Use
 
-| Command | Panel |
+| Command | Models |
 |---|---|
-| `/fusion <q>` | configured `fusion_panel_*` roles (or defaults); `--panel m1,m2,...`, `--judge m`, `--analysis-only` |
+| `/fusion <q>` | configured `fusion_proposer_*` roles (or defaults); `--proposers m1,m2,...` (alias: `--panel`), `--aggregator m` (alias: `--judge`), `--analysis-only` |
 | `/fusion-solo <q>` | floor mode — `pi/slow` run **twice**, always available |
-| `/fusion-pair <q>` | two-model panel (`fusion_panel_1` + `_2`) |
-| `/fusion-trio <q>` | three-model panel (`fusion_panel_1..3`) |
-| `/ultrafusion <task>` | 6 proposers plan in parallel → 3 critics comment (consensus/contradictions/unique opinions) → aggregator writes the final plan; `--proposers m1,...`, `--critics m1,...`, `--aggregator m` |
+| `/fusion-pair <q>` | two-model proposer wave (`fusion_proposer_1` + `_2`) |
+| `/fusion-trio <q>` | three-model proposer wave (`fusion_proposer_1..3`) |
+| `/ultrafusion <task>` | explorers investigate in parallel then proposers critique findings and commit to plans in parallel then aggregator writes the final plan; `--explorers m1,...`, `--proposers m1,...` (alias: `--critics`), `--aggregator m` |
 
 Or just ask in prose — the skill auto-triggers on "run it through fusion", "panel of models", "fuse the
 models", "second/third opinion in parallel", etc.
@@ -139,33 +136,33 @@ omp -p "Plan a migration strategy" --model omp-fusion/fusion-samp
 
 ```yaml
 modelRoles:
-  fusion_judge: omp-fusion/fusion   # e.g. use Fusion's judged answer as another role's model
+  fusion_aggregator: omp-fusion/fusion   # e.g. use Fusion's aggregated answer as another role's model
 ```
 
 `/model` and `omp models` list all four. Role resolution follows the same precedence as the slash commands
-(configured roles → cycled fusion-panel fallback for Ultrafusion → built-in defaults), minus the
-`--panel`/`--judge`/`--proposers`/`--critics`/`--aggregator`/`--analysis-only` invocation flags, which have
+(configured roles then LEGACY fallbacks then built-in defaults), minus the
+`--proposers`/`--aggregator`/`--explorers`/`--analysis-only` invocation flags, which have
 no equivalent for a raw model call. A resolved role that points back at `omp-fusion/*` is always rejected
 (self-recursion guard) and falls through to the next candidate.
 
 **Known limitations of the provider path** (the slash commands are unaffected unless noted):
 
-- **No tool use inside panelists/proposers.** Unlike `/fusion` and `/ultrafusion`, whose panelists and
-  proposers have full `bash`/`web_search` access, panelists reached through `--model omp-fusion/*` reason
+- **No tool use inside proposers/explorers.** Unlike `/fusion` and `/ultrafusion`, whose proposers and
+  explorers have full `bash`/`web_search`/`write` access, models reached through `--model omp-fusion/*` reason
   prose-only. Restoring tool use inside a `streamSimple` handler needs either a from-scratch tool loop or a
   way to construct a tool-enabled session from extension code; neither is implemented yet. Use the slash
   commands when panelists need to verify claims against real code or the web.
 - **Outer `systemPrompt`/`tools` are discarded by design.** When a caller routes through `--model
   omp-fusion/*`, the outer agent's system prompt and tool list are *intentionally not* forwarded to inner
-  panelists. Inner panelists use their own role-specific prompts (the same `agents/*.md` the slash commands
-  use). Forwarding an agentic outer system prompt into prose-only panelists would actively degrade answers
+  panelists. Inner proposers/explorers use their own role-specific prompts (the same `agents/*.md` the slash commands
+  use). Forwarding an agentic outer system prompt into prose-only proposers would actively degrade answers
   by injecting instructions like "always use tools" into models that have no tools. Multi-turn history
   *is* preserved (see below); only the outer system prompt and tool list are dropped.
-- **Floor mode may not diverge.** When only one panel/proposer role resolves, the pipeline duplicates it
+- **Floor mode may not diverge.** When only one proposer/explorer role resolves, the pipeline duplicates it
   into two cold runs of the same model (documented floor mode). `SimpleStreamOptions` exposes no
   `temperature` channel, so the provider cannot force sampling variance — if the underlying model defaults
   to low temperature, the two runs may produce near-identical answers. For genuine divergence, configure
-  two distinct models (e.g. `fusion_panel_1` + `fusion_panel_2`) rather than relying on floor mode.
+  two distinct models (e.g. `fusion_proposer_1` + `fusion_proposer_2`) rather than relying on floor mode.
 - **Module-singleton model registry.** The provider captures one model-resolution facade per process at
   `session_start` and holds it in module-level state. This is fine for the intended single-session CLI
   deployment, but is not safe for concurrent multi-session use within one process (a pattern that has been
@@ -175,7 +172,7 @@ no equivalent for a raw model call. A resolved role that points back at `omp-fus
   fire `session_start`, so role resolution throws a clear error rather than silently resolving the wrong
   models. Normal interactive and `-p`/print-mode sessions are unaffected.
 - **Multi-turn context cost.** Prior-turn user and assistant messages are forwarded to every inner
-  panelist/proposer/critic/aggregator call so the panel can reason about the full conversation, not just
+  proposer/explorer/aggregator call so the wave can reason about the full conversation, not just
   the latest turn. Thinking blocks and tool results from prior turns are *not* forwarded — only text
   content. This means each inner call's token cost grows with conversation length; for very long sessions
   consider `/clear` before invoking Fusion on an unrelated topic.
