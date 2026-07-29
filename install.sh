@@ -11,8 +11,8 @@
 #              docs/CROSS-COMPAT.md — pi has no /command system or eval fan-out; run support is experimental.
 #
 # Convenience (no CLI needed — manual side-load into a config dir):
-#   (default)  copy skill + agents + commands into ~/.omp/agent (custom fusion-panel/fusion-judge agents
-#              available -> SKILL.md custom-agent path).
+#   (default)  copy skill + agents + commands into ~/.omp/agent (custom fusion-proposer/fusion-aggregator
+#              agents available -> SKILL.md custom-agent path).
 #   --dir <p>  copy into an explicit agent dir (OMP_AGENT_DIR also works).
 #
 # Idempotent. Never deletes anything outside the three fusion targets.
@@ -46,7 +46,12 @@ if [ "$MODE" = plugin ]; then
     exit 1
   fi
   echo "Linking Fusion as an OMP plugin:  omp plugin link $HERE"
-  omp plugin link "$HERE"
+  if ! omp plugin link "$HERE"; then
+    echo "error: 'omp plugin link' failed (see error above). On Windows this is usually an" >&2
+    echo "unprivileged-symlink restriction (EPERM) — enable Developer Mode or run an elevated" >&2
+    echo "shell, or fall back to copy mode instead (no symlink required):  ./install.sh" >&2
+    exit 1
+  fi
   echo
   echo "Linked. OMP auto-discovers skills/fusion + commands/ from this repo."
   echo "The plugin surface does NOT register the custom agents — the skill uses the bundled 'task' agent"
@@ -83,6 +88,9 @@ if [ -d "$HERE/skills/ultrafusion" ]; then
 fi
 
 # agents + commands (all markdown files)
+# Clean up agent files this repo has since renamed/removed (targeted — only Fusion's own known
+# historical artifacts, never touches unrelated agents a user may have in the same directory).
+rm -f "$AGENT_DIR/agents/fusion-panel.md" "$AGENT_DIR/agents/fusion-judge.md"
 cp "$HERE/agents/"*.md "$AGENT_DIR/agents/"
 cp "$HERE/commands/"*.md "$AGENT_DIR/commands/"
 if [ -d "$HERE/extension" ]; then
@@ -91,7 +99,7 @@ fi
 
 echo "Installed:"
 echo "  skills   : fusion, ultrafusion"
-echo "  agents   : fusion-panel, fusion-judge, ultrafusion-{proposer,critic,aggregator}"
+echo "  agents   : fusion-proposer, fusion-aggregator, ultrafusion-{proposer,critic,aggregator}"
 echo "  commands : /fusion /fusion-solo /fusion-pair /fusion-trio /ultrafusion"
 echo "  extension: $AGENT_DIR/extensions/omp-fusion (omp-fusion/fusion, fusion-fast, fusion-samp, ultrafusion)"
 echo

@@ -2,6 +2,30 @@
 
 All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 
+## [Unreleased] — install.sh: fix stale agent names, clean up dead legacy files, Windows caveat
+
+### Fixed
+- **`install.sh`'s own output referenced the pre-rename agent names.** Both its header comment
+  and the runtime "Installed:" summary said `fusion-panel, fusion-judge` — the names from before
+  the panel→proposer / judge→aggregator rename. Corrected to `fusion-proposer, fusion-aggregator`
+  (README.md's copy already had the current names; only install.sh itself was stale).
+- **Copy-mode install never cleaned up agent files this repo has since renamed/removed**, so
+  anyone who installed before the rename accumulates dead `fusion-panel.md`/`fusion-judge.md`
+  files forever (re-running install.sh only adds/overwrites, never removes). Confirmed live: a
+  machine that installed on Jul 13 still had both files after several later reinstalls. Added a
+  targeted `rm -f` for exactly those two known-dead filenames before the copy step — scoped to
+  Fusion's own historical artifacts only, never touches unrelated agents in the same directory.
+- **`omp plugin link` fails on Windows without Developer Mode / an elevated shell** (creates a
+  symlink; unprivileged Windows blocks it with `EPERM: operation not permitted, symlink`) — hit
+  directly this session. `install.sh --plugin` now catches the failure and prints a fallback hint
+  pointing at copy mode instead of just exiting on `omp plugin link`'s raw error. README.md's
+  Install section gains a matching "Windows note" caveat.
+
+### Verified
+- `bash -n install.sh` clean; re-ran on the machine with the stale Jul-13 files — confirmed both
+  removed after this fix, "Installed:" now prints the correct agent names, and a fresh `--dir`
+  install to an empty directory still works cleanly (the `rm -f` is a safe no-op there).
+
 ## [Unreleased] — Added `ultra_aggregator`: Ultrafusion's own dedicated aggregator key
 
 ### Added

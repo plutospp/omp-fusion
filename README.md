@@ -74,6 +74,10 @@ Copy mode installs:
 
 Then restart the agent (or `/reload`).
 
+**Windows note:** `omp plugin link` creates a symlink, which needs Developer Mode enabled or an
+elevated shell — without it, linking fails with `EPERM: operation not permitted, symlink`. Copy
+mode (no flag) needs no symlink permissions and works everywhere; fall back to it if `--plugin` fails.
+
 ## Configure the models (aggregator required)
 
 With no config, Fusion uses `pi/slow` + `pi/default` as the proposers; the aggregator has **no default**
