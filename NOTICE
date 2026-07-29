@@ -16,20 +16,25 @@ What is preserved from the original (the method, credited to duolahypercho):
   - no personas / "lenses"; the verbatim task goes to every panelist.
 
 What changed for OMP (this port):
-  - Proposers, explorers, and the aggregator are ordinary OMP subagents (the `task`/`eval`
-    `agent()` path + custom `fusion-explorer` / `fusion-proposer` / `fusion-aggregator` agents), not
-    Claude Code `Agent` subagents or external CLIs.
+  - Proposers, critics, and the aggregator are ordinary OMP subagents (the
+    `task`/`eval` `agent()` path + custom `fusion-proposer` / `fusion-aggregator`
+    agents for Fusion, and dedicated `ultrafusion-proposer` / `ultrafusion-critic`
+    / `ultrafusion-aggregator` agents for the companion Ultrafusion planning
+    pipeline), not Claude Code `Agent` subagents or external CLIs.
   - No `run_codex.sh` / `run_gemini.sh` / `agy` shell runners and no
     `command -v` CLI detection. Any provider/model is selectable through OMP's
     native model resolution.
-  - Proposer, explorer, and aggregator models are configurable via `modelRoles`
-    (`fusion_proposer_1..N`, `fusion_explorer_1..N`, `fusion_aggregator`) or a
-    per-invocation `--proposers`/`--explorers`/`--aggregator` override — the way
+  - Proposer and aggregator models are configurable via `modelRoles` (`proposer_1..N`,
+    `aggregator`) or a per-invocation `--proposers`/`--aggregator` override — the way
     `/advisor`'s model is configured — instead of being pinned to specific model
-    versions. Legacy keys (`fusion_panel_*`, `fusion_judge`, `ultrafusion_*`)
-    remain as deprecated per-pipeline fallbacks.
-  - The aggregator is a separate subagent with its own configurable model, so the
-    aggregator model is chosen independently of the session model.
+    versions. These canonical keys are shared: Fusion, Fusion-fast, and Fusion-samp
+    all read them, and Ultrafusion reads the same `proposer_1..N`/`aggregator` for its
+    own proposer and aggregator waves (adding its own `critic_1..3` for the extra
+    critic wave, and its own optional `ultra_aggregator` key — checked before the
+    shared `aggregator`, letting Ultrafusion use a different synthesizer than Fusion
+    without an equivalent override on the Fusion side).
+  - The aggregator is a separate subagent with its own required, configurable model — there
+    is no implicit default; it must be set explicitly, independent of the session model.
 
 Original copyright (c) 2026 duolahypercho. Port copyright (c) 2026 Jordan Strauss.
 Both under the MIT License (see LICENSE).

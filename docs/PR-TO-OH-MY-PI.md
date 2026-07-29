@@ -35,13 +35,13 @@ the link. This is the lowest-friction way to give Fusion to other OMP users.
 ### 3. First-party PR to oh-my-pi core
 There are now **two** core framings, with the advisor as precedent (see the fact table):
 
-- **Agents-only (low effort, low value).** Add `fusion-panel.md` + `fusion-judge.md` to
+- **Agents-only (low effort, low value).** Add `fusion-proposer.md` + `fusion-aggregator.md` to
   `src/prompts/agents/` (joining task/oracle/reviewer). Trivial PR — but two subagent *types* without an
   in-core orchestrator do little; the skill that drives the `eval` fan-out still has no bundled-`.md` home.
 - **`/fusion` as an advisor-sibling feature (higher effort, the version worth merging).** OMP already
   ships the **advisor** (one watchdog model reviewing the transcript, `modelRoles.advisor`, `/advisor
-  on/off`). Fusion is its generalization: a panel → judge run configured via `modelRoles.fusion_judge` /
-  `fusion_panel_*` (the idiom this repo already uses), exposed as a builtin `/fusion`. This is a
+  on/off`). Fusion is its generalization: a panel → aggregator run configured via `modelRoles.aggregator` /
+  `proposer_N` (the idiom this repo already uses), exposed as a builtin `/fusion`. This is a
   TypeScript build in core, maintainer-gated — but the advisor proves the surface is welcome in principle.
 
 **Recommended upstream move:** ship path 2 (plugin) publicly first as the working reference, then open an

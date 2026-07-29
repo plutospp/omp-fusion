@@ -12,7 +12,7 @@
   "dependencies": {},
   "name": "omp-fusion",
   "version": "0.1.0",
-  "description": "Fusion — run a hard question through an independent parallel model panel, then a judge synthesizes. An OMP skill + slash commands (installs on vanilla pi too; parallel fan-out is OMP-native). Also ships /ultrafusion: N proposers -> M critics -> aggregator planning pipeline, plus omp-fusion/fusion-fast and fusion-samp fast-path variants.",
+  "description": "Fusion — run a hard question through an independent parallel model proposer wave, then an aggregator synthesizes. An OMP skill + slash commands (installs on vanilla pi too; parallel fan-out is OMP-native). Also ships /ultrafusion: N proposers -> M critics -> aggregator planning pipeline, plus omp-fusion/fusion-fast and fusion-samp fast-path variants.",
   "keywords": [
     "omp",
     "pi",
@@ -35,7 +35,7 @@
     "url": "git+https://github.com/jms830/omp-fusion.git"
   },
   "omp": {
-    "description": "Independent parallel model proposers then aggregator synthesis, plus an /ultrafusion planning pipeline (explorers then proposers then aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled task agent in plugin mode, so no custom-agent install is required. Configure via modelRoles (fusion_proposer_1..N / fusion_explorer_1..N / fusion_aggregator; legacy fusion_panel_1..N / fusion_judge / ultrafusion_proposer_1..6 / ultrafusion_critic_1..3 / ultrafusion_aggregator keys remain as deprecated fallbacks). Also registers an omp-fusion provider with four models: omp-fusion/fusion (proposers->aggregator), fusion-fast (majority-quorum proposers->aggregator), fusion-samp (random-sampled proposers->aggregator), and ultrafusion (explorers->proposers->aggregator).",
+    "description": "Independent parallel model proposers then aggregator synthesis, plus an /ultrafusion planning pipeline (proposers then critics then aggregator). Ships the fusion skill + /fusion[-solo|-pair|-trio] commands and the ultrafusion skill + /ultrafusion command. Uses the bundled task agent in plugin mode, so no custom-agent install is required. Configure via modelRoles: aggregator (required, no fallback) and proposer_N are canonical and shared by all four pipelines; critic_N is Ultrafusion's own extra wave. Also registers an omp-fusion provider with four models: omp-fusion/fusion (proposers->aggregator), fusion-fast (majority-quorum proposers->aggregator), fusion-samp (random-sampled proposers->aggregator), and ultrafusion (proposers->critics->aggregator).",
     "extensions": [
       "./extension/index.ts"
     ]

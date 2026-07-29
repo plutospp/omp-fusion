@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { Api, Model } from "@oh-my-pi/pi-ai";
 import type { ExtensionModelQuery } from "@oh-my-pi/pi-coding-agent";
-import { resolveRoles, setModelsFacadeForTesting } from "./models";
+import { resolveRoles, resolveUltrafusionRoles, setModelsFacadeForTesting } from "./models";
 
 function fakeModel(provider: string, id: string): Model<Api> {
 	return { provider, id, name: `${provider}/${id}` } as unknown as Model<Api>;
@@ -18,197 +18,114 @@ function makeFacade(roles: Record<string, Model<Api> | undefined>): ExtensionMod
 
 const SLOW = fakeModel("anthropic", "claude-slow");
 const DEFAULT = fakeModel("openai", "gpt-default");
-
-/** The README example config: only `ultrafusion_*` keys set, no canonical `fusion_*` keys. */
-function readmeConfig() {
-	const roles: Record<string, Model<Api> | undefined> = {
-		"@slow": SLOW,
-		"@default": DEFAULT,
-		"@ultrafusion_aggregator": fakeModel("anthropic", "claude-opus"),
-	};
-	for (const n of [1, 2, 3, 4, 5, 6]) roles[`@ultrafusion_proposer_${n}`] = fakeModel("vendor", `proposer-${n}`);
-	for (const n of [1, 2, 3]) roles[`@ultrafusion_critic_${n}`] = fakeModel("vendor", `critic-${n}`);
-	return roles;
-}
+const AGGREGATOR = fakeModel("anthropic", "agg-model");
 
 beforeEach(() => {
 	setModelsFacadeForTesting(undefined);
 });
 
-describe("resolveRoles — canonical keys", () => {
-	test("canonical fusion_* keys take precedence over legacy keys", () => {
+describe("resolveRoles (fusion/fusion-fast/fusion-samp) — canonical bare keys, no legacy fallback", () => {
+	test("aggregator/proposer_* resolve directly from modelRoles", () => {
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_aggregator": fakeModel("anthropic", "canonical-agg"),
-				"@fusion_proposer_1": fakeModel("anthropic", "canonical-prop-1"),
-				"@fusion_proposer_2": fakeModel("openai", "canonical-prop-2"),
-				"@fusion_explorer_1": fakeModel("google", "canonical-exp-1"),
-				"@fusion_explorer_2": fakeModel("google", "canonical-exp-2"),
-				// legacy keys also set — must be ignored
-				"@ultrafusion_aggregator": fakeModel("anthropic", "legacy-agg"),
-				"@ultrafusion_proposer_1": fakeModel("vendor", "legacy-prop-1"),
-				"@ultrafusion_critic_1": fakeModel("vendor", "legacy-critic-1"),
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("anthropic", "canonical-prop-1"),
+				"@proposer_2": fakeModel("openai", "canonical-prop-2"),
 			}),
 		);
 
-		const r = resolveRoles("ultrafusion");
-		expect(r.aggregator.model.id).toBe("canonical-agg");
+		const r = resolveRoles("fusion");
+		expect(r.aggregator.model.id).toBe("agg-model");
 		expect(r.proposers.map((s) => s.model.id)).toEqual(["canonical-prop-1", "canonical-prop-2"]);
-		expect(r.explorers.map((s) => s.model.id)).toEqual(["canonical-exp-1", "canonical-exp-2"]);
 	});
 
-	test("fusion shape returns empty explorers", () => {
+	test("aggregator/proposer_* are shared between fusion and ultrafusion", () => {
 		setModelsFacadeForTesting(
 			makeFacade({
-				"@slow": SLOW,
-				"@default": DEFAULT,
-				"@fusion_proposer_1": fakeModel("a", "p1"),
-				"@fusion_proposer_2": fakeModel("b", "p2"),
+				"@aggregator": fakeModel("anthropic", "shared-agg"),
+				"@proposer_1": fakeModel("a", "shared-prop-1"),
+				"@proposer_2": fakeModel("b", "shared-prop-2"),
+				"@proposer_3": fakeModel("c", "shared-prop-3"),
 			}),
 		);
-		expect(resolveRoles("fusion").explorers).toEqual([]);
-		expect(resolveRoles("fusion-fast").explorers).toEqual([]);
-		expect(resolveRoles("fusion-samp").explorers).toEqual([]);
+
+		const fusion = resolveRoles("fusion");
+		expect(fusion.aggregator.model.id).toBe("shared-agg");
+		expect(fusion.proposers.map((s) => s.model.id)).toEqual(["shared-prop-1", "shared-prop-2", "shared-prop-3"]);
+
+		const ultra = resolveUltrafusionRoles();
+		expect(ultra.aggregator.model.id).toBe("shared-agg");
+		expect(ultra.proposers.map((s) => s.model.id)).toEqual(["shared-prop-1", "shared-prop-2", "shared-prop-3"]);
+	});
+
+	test("canonical proposer_* pool holds all 32 slots", () => {
+		const roles: Record<string, Model<Api> | undefined> = { "@aggregator": AGGREGATOR };
+		for (let n = 1; n <= 32; n++) roles[`@proposer_${n}`] = fakeModel("v", `prop-${n}`);
+		setModelsFacadeForTesting(makeFacade(roles));
+		const r = resolveRoles("fusion");
+		expect(r.proposers).toHaveLength(32);
+		expect(r.proposers.map((s) => s.model.id)).toEqual(Array.from({ length: 32 }, (_, i) => `prop-${i + 1}`));
 	});
 });
 
-describe("resolveRoles — per-pipeline LEGACY equivalence (req 5)", () => {
-	// A user with only the README `ultrafusion_*` config must get the
-	// SAME models in the SAME wave positions as before the refactor.
-
-	test("fusion-fast: ultrafusion_proposer_* feeds the proposer wave", () => {
-		setModelsFacadeForTesting(makeFacade(readmeConfig()));
-		const r = resolveRoles("fusion-fast");
-		expect(r.proposers.map((s) => s.model.id)).toEqual([
-			"proposer-1", "proposer-2", "proposer-3", "proposer-4", "proposer-5", "proposer-6",
-		]);
-		expect(r.aggregator.model.id).toBe("claude-opus");
-		expect(r.explorers).toEqual([]);
-	});
-
-	test("fusion-samp: ultrafusion_proposer_* feeds the proposer wave", () => {
-		setModelsFacadeForTesting(makeFacade(readmeConfig()));
-		const r = resolveRoles("fusion-samp");
-		expect(r.proposers.map((s) => s.model.id)).toEqual([
-			"proposer-1", "proposer-2", "proposer-3", "proposer-4", "proposer-5", "proposer-6",
-		]);
-	});
-
-	test("ultrafusion: ultrafusion_proposer_* feeds explorers, ultrafusion_critic_* feeds proposers", () => {
-		setModelsFacadeForTesting(makeFacade(readmeConfig()));
-		const r = resolveRoles("ultrafusion");
-		expect(r.explorers.map((s) => s.model.id)).toEqual([
-			"proposer-1", "proposer-2", "proposer-3", "proposer-4", "proposer-5", "proposer-6",
-		]);
-		expect(r.proposers.map((s) => s.model.id)).toEqual(["critic-1", "critic-2", "critic-3"]);
-		expect(r.aggregator.model.id).toBe("claude-opus");
-	});
-
-	test("fusion: ultrafusion_proposer_* is the second legacy tier (after fusion_panel_*)", () => {
-		setModelsFacadeForTesting(makeFacade(readmeConfig()));
-		const r = resolveRoles("fusion");
-		// fusion_panel_* unset → falls through to ultrafusion_proposer_*
-		expect(r.proposers.map((s) => s.model.id)).toEqual([
-			"proposer-1", "proposer-2", "proposer-3", "proposer-4", "proposer-5", "proposer-6",
-		]);
-	});
-
-	test("fusion: fusion_panel_* takes precedence over ultrafusion_proposer_*", () => {
-		const roles = readmeConfig();
-		roles["@fusion_panel_1"] = fakeModel("a", "panel-1");
-		roles["@fusion_panel_2"] = fakeModel("b", "panel-2");
-		setModelsFacadeForTesting(makeFacade(roles));
-		const r = resolveRoles("fusion");
-		expect(r.proposers.map((s) => s.model.id)).toEqual(["panel-1", "panel-2"]);
-	});
-
-	test("fusion, nothing configured: builtin defaults as-is = 2 panelists (not cycled to 6)", () => {
-		setModelsFacadeForTesting(makeFacade({ "@slow": SLOW, "@default": DEFAULT }));
+describe("resolveRoles — proposer built-in-default floor (no `proposer_N` configured)", () => {
+	test("fusion, nothing configured: builtin defaults as-is = 2 panelists (not cycled)", () => {
+		setModelsFacadeForTesting(makeFacade({ "@slow": SLOW, "@default": DEFAULT, "@aggregator": AGGREGATOR }));
 		const r = resolveRoles("fusion");
 		expect(r.proposers).toHaveLength(2);
 		expect(r.proposers.map((s) => s.model.id)).toEqual(["claude-slow", "gpt-default"]);
 	});
 
-	test("fusion-fast with only fusion_panel_1..3: cycled to 6 proposers", () => {
-		setModelsFacadeForTesting(
-			makeFacade({
-				"@slow": SLOW,
-				"@default": DEFAULT,
-				"@fusion_panel_1": fakeModel("a", "panel-1"),
-				"@fusion_panel_2": fakeModel("b", "panel-2"),
-				"@fusion_panel_3": fakeModel("c", "panel-3"),
-			}),
-		);
-		const r = resolveRoles("fusion-fast");
+	test("fusion-samp, nothing configured: builtin defaults cycled to FALLBACK_CYCLE_PROPOSERS (6), not the wider canonical range", () => {
+		setModelsFacadeForTesting(makeFacade({ "@slow": SLOW, "@default": DEFAULT, "@aggregator": AGGREGATOR }));
+		const r = resolveRoles("fusion-samp");
 		expect(r.proposers).toHaveLength(6);
 		expect(r.proposers.map((s) => s.model.id)).toEqual([
-			"panel-1", "panel-2", "panel-3", "panel-1", "panel-2", "panel-3",
-		]);
-	});
-
-	test("ultrafusion explorers with only fusion_panel_1..3: cycled to 6 explorers", () => {
-		setModelsFacadeForTesting(
-			makeFacade({
-				"@slow": SLOW,
-				"@default": DEFAULT,
-				"@fusion_panel_1": fakeModel("a", "panel-1"),
-				"@fusion_panel_2": fakeModel("b", "panel-2"),
-				"@fusion_panel_3": fakeModel("c", "panel-3"),
-			}),
-		);
-		const r = resolveRoles("ultrafusion");
-		expect(r.explorers).toHaveLength(6);
-		expect(r.explorers.map((s) => s.model.id)).toEqual([
-			"panel-1", "panel-2", "panel-3", "panel-1", "panel-2", "panel-3",
-		]);
-	});
-
-	test("ultrafusion proposers with only fusion_panel_1..3: cycled to 6 (intentional widening from critics' 3)", () => {
-		// Today's critics wave cycled fusion_panel_* to 3. The wave changed identity
-		// (critics → proposers, a 6-slot wave) per req 4, so 6 is intentional.
-		setModelsFacadeForTesting(
-			makeFacade({
-				"@slow": SLOW,
-				"@default": DEFAULT,
-				"@fusion_panel_1": fakeModel("a", "panel-1"),
-				"@fusion_panel_2": fakeModel("b", "panel-2"),
-				"@fusion_panel_3": fakeModel("c", "panel-3"),
-			}),
-		);
-		const r = resolveRoles("ultrafusion");
-		expect(r.proposers).toHaveLength(6);
-		expect(r.proposers.map((s) => s.model.id)).toEqual([
-			"panel-1", "panel-2", "panel-3", "panel-1", "panel-2", "panel-3",
+			"claude-slow", "gpt-default", "claude-slow", "gpt-default", "claude-slow", "gpt-default",
 		]);
 	});
 });
 
-describe("resolveRoles — aggregator fallback chain", () => {
-	test("fusion_aggregator → ultrafusion_aggregator → fusion_judge → @slow", () => {
-		// only fusion_judge set
+describe("resolveRoles — aggregator requires explicit `modelRoles.aggregator`, no fallback", () => {
+	test("configured aggregator resolves", () => {
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_judge": fakeModel("anthropic", "judge-model"),
-				"@fusion_proposer_1": fakeModel("a", "p1"),
-				"@fusion_proposer_2": fakeModel("b", "p2"),
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
 			}),
 		);
-		expect(resolveRoles("fusion").aggregator.model.id).toBe("judge-model");
+		expect(resolveRoles("fusion").aggregator.model.id).toBe("agg-model");
+	});
 
-		// nothing but @slow
+	test("unconfigured aggregator throws even when @slow/@default are available", () => {
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_proposer_1": fakeModel("a", "p1"),
-				"@fusion_proposer_2": fakeModel("b", "p2"),
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
 			}),
 		);
-		expect(resolveRoles("fusion").aggregator.model.id).toBe("claude-slow");
+		expect(() => resolveRoles("fusion")).toThrow(/aggregator model not configured/);
+	});
+
+	test("aggregator resolving back to omp-fusion itself is treated as unconfigured", () => {
+		const recursive = { provider: "omp-fusion", id: "fusion", name: "omp-fusion/fusion" } as unknown as Model<Api>;
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@aggregator": recursive,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(() => resolveRoles("fusion")).toThrow(/aggregator model not configured/);
 	});
 });
 
@@ -218,7 +135,8 @@ describe("resolveRoles — floor mode", () => {
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_proposer_1": fakeModel("a", "only-prop"),
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "only-prop"),
 			}),
 		);
 		const r = resolveRoles("fusion");
@@ -227,33 +145,208 @@ describe("resolveRoles — floor mode", () => {
 		expect(r.proposers[1]!.model.id).toBe("only-prop");
 		expect(r.proposers[1]!.label).toContain("floor mode");
 	});
+});
 
-	test("single explorer model is duplicated as two cold runs", () => {
+describe("resolveRoles — error cases", () => {
+	test("throws when no aggregator resolves", () => {
+		setModelsFacadeForTesting(makeFacade({}));
+		expect(() => resolveRoles("fusion")).toThrow(/aggregator model not configured/);
+	});
+
+	test("throws when fewer than two proposers resolve", () => {
+		setModelsFacadeForTesting(makeFacade({ "@aggregator": AGGREGATOR }));
+		expect(() => resolveRoles("fusion")).toThrow(/could not resolve at least two proposer models/);
+	});
+
+	test("throws without facade (session_start not fired)", () => {
+		setModelsFacadeForTesting(undefined);
+		expect(() => resolveRoles("fusion")).toThrow(/model-resolution facade unavailable/);
+	});
+});
+
+describe("resolveUltrafusionRoles — canonical bare keys, no legacy fallback", () => {
+	test("proposer_*/critic_*/aggregator resolve directly from modelRoles", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "canonical-prop-1"),
+				"@proposer_2": fakeModel("b", "canonical-prop-2"),
+				"@critic_1": fakeModel("c", "canonical-critic-1"),
+				"@critic_2": fakeModel("d", "canonical-critic-2"),
+			}),
+		);
+
+		const r = resolveUltrafusionRoles();
+		expect(r.aggregator.model.id).toBe("agg-model");
+		expect(r.proposers.map((s) => s.model.id)).toEqual(["canonical-prop-1", "canonical-prop-2"]);
+		expect(r.critics.map((s) => s.model.id)).toEqual(["canonical-critic-1", "canonical-critic-2"]);
+	});
+
+	test("canonical critic_* pool holds all 16 slots", () => {
+		const roles: Record<string, Model<Api> | undefined> = {
+			"@aggregator": AGGREGATOR,
+			"@proposer_1": fakeModel("v", "p1"),
+			"@proposer_2": fakeModel("v", "p2"),
+		};
+		for (let n = 1; n <= 16; n++) roles[`@critic_${n}`] = fakeModel("v", `critic-${n}`);
+		setModelsFacadeForTesting(makeFacade(roles));
+		const r = resolveUltrafusionRoles();
+		expect(r.critics).toHaveLength(16);
+		expect(r.critics.map((s) => s.model.id)).toEqual(Array.from({ length: 16 }, (_, i) => `critic-${i + 1}`));
+	});
+});
+
+describe("resolveUltrafusionRoles — built-in-default floor (no `proposer_N`/`critic_N` configured)", () => {
+	test("nothing configured: builtin defaults cycled to FALLBACK_CYCLE_PROPOSERS/CRITICS (6/3), not the wider canonical range", () => {
+		setModelsFacadeForTesting(makeFacade({ "@slow": SLOW, "@default": DEFAULT, "@aggregator": AGGREGATOR }));
+		const r = resolveUltrafusionRoles();
+		expect(r.proposers).toHaveLength(6);
+		expect(r.proposers.map((s) => s.model.id)).toEqual([
+			"claude-slow", "gpt-default", "claude-slow", "gpt-default", "claude-slow", "gpt-default",
+		]);
+		expect(r.critics).toHaveLength(3);
+		expect(r.critics.map((s) => s.model.id)).toEqual(["claude-slow", "gpt-default", "claude-slow"]);
+	});
+
+	test("single proposer model is duplicated as two cold runs", () => {
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_proposer_1": fakeModel("a", "p1"),
-				"@fusion_proposer_2": fakeModel("b", "p2"),
-				"@fusion_explorer_1": fakeModel("c", "only-exp"),
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "only-prop"),
 			}),
 		);
-		const r = resolveRoles("ultrafusion");
-		expect(r.explorers).toHaveLength(2);
-		expect(r.explorers[0]!.model.id).toBe("only-exp");
-		expect(r.explorers[1]!.model.id).toBe("only-exp");
+		const r = resolveUltrafusionRoles();
+		expect(r.proposers).toHaveLength(2);
+		expect(r.proposers[0]!.model.id).toBe("only-prop");
+		expect(r.proposers[1]!.model.id).toBe("only-prop");
+		expect(r.proposers[1]!.label).toContain("floor mode");
+	});
+
+	test("0 critics resolved is allowed when no fallback source exists (aggregator degraded mode handles it downstream)", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+				// no @slow/@default, no critic_* → critics wave has nothing to resolve
+			}),
+		);
+		expect(resolveUltrafusionRoles().critics).toEqual([]);
 	});
 });
 
-describe("resolveRoles — self-recursion guard", () => {
-	test("role resolving back to omp-fusion provider is skipped", () => {
+describe("resolveUltrafusionRoles — aggregator: ultra_aggregator (own key) then shared aggregator, no other fallback", () => {
+	test("shared aggregator resolves when ultra_aggregator is unset", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(resolveUltrafusionRoles().aggregator.model.id).toBe("agg-model");
+	});
+
+	test("ultra_aggregator takes precedence over the shared aggregator when both are set", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@aggregator": AGGREGATOR,
+				"@ultra_aggregator": fakeModel("anthropic", "ultra-agg-model"),
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(resolveUltrafusionRoles().aggregator.model.id).toBe("ultra-agg-model");
+	});
+
+	test("ultra_aggregator alone (no shared aggregator configured) resolves", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@ultra_aggregator": fakeModel("anthropic", "ultra-agg-model"),
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(resolveUltrafusionRoles().aggregator.model.id).toBe("ultra-agg-model");
+	});
+
+	test("ultra_aggregator resolving back to omp-fusion itself falls through to the shared aggregator", () => {
+		const recursive = { provider: "omp-fusion", id: "ultrafusion", name: "omp-fusion/ultrafusion" } as unknown as Model<Api>;
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@aggregator": AGGREGATOR,
+				"@ultra_aggregator": recursive,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(resolveUltrafusionRoles().aggregator.model.id).toBe("agg-model");
+	});
+
+	test("neither ultra_aggregator nor aggregator configured throws, even when @slow/@default are available", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@slow": SLOW,
+				"@default": DEFAULT,
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		expect(() => resolveUltrafusionRoles()).toThrow(/aggregator model not configured/);
+	});
+});
+
+describe("resolveRoles (fusion/fusion-fast/fusion-samp) — unaffected by ultra_aggregator", () => {
+	test("fusion ignores ultra_aggregator entirely — only the shared aggregator applies", () => {
+		setModelsFacadeForTesting(
+			makeFacade({
+				"@ultra_aggregator": fakeModel("anthropic", "ultra-agg-model"),
+				"@proposer_1": fakeModel("a", "p1"),
+				"@proposer_2": fakeModel("b", "p2"),
+			}),
+		);
+		// no @aggregator set, only @ultra_aggregator (ultrafusion-only) → fusion still throws
+		expect(() => resolveRoles("fusion")).toThrow(/aggregator model not configured/);
+	});
+});
+
+describe("resolveUltrafusionRoles — error cases", () => {
+	test("throws when no aggregator resolves", () => {
+		setModelsFacadeForTesting(makeFacade({}));
+		expect(() => resolveUltrafusionRoles()).toThrow(/aggregator model not configured/);
+	});
+
+	test("throws when fewer than two proposers resolve", () => {
+		setModelsFacadeForTesting(makeFacade({ "@aggregator": AGGREGATOR }));
+		expect(() => resolveUltrafusionRoles()).toThrow(/could not resolve at least two proposer models/);
+	});
+
+	test("throws without facade (session_start not fired)", () => {
+		setModelsFacadeForTesting(undefined);
+		expect(() => resolveUltrafusionRoles()).toThrow(/model-resolution facade unavailable/);
+	});
+});
+
+describe("self-recursion guard", () => {
+	test("role resolving back to omp-fusion provider is skipped for fusion proposers", () => {
 		const recursive = { provider: "omp-fusion", id: "fusion", name: "omp-fusion/fusion" } as unknown as Model<Api>;
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
 				"@default": DEFAULT,
-				"@fusion_proposer_1": recursive, // must be skipped
-				"@fusion_proposer_2": fakeModel("b", "safe-prop"),
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": recursive, // must be skipped
+				"@proposer_2": fakeModel("b", "safe-prop"),
 			}),
 		);
 		const r = resolveRoles("fusion");
@@ -261,32 +354,19 @@ describe("resolveRoles — self-recursion guard", () => {
 		expect(r.proposers.map((s) => s.model.id)).toEqual(["safe-prop", "safe-prop"]);
 		expect(r.proposers[1]!.label).toContain("floor mode");
 	});
-});
 
-describe("resolveRoles — error cases", () => {
-	test("throws when no aggregator resolves", () => {
-		setModelsFacadeForTesting(makeFacade({}));
-		expect(() => resolveRoles("fusion")).toThrow(/could not resolve an aggregator model/);
-	});
-
-	test("throws when fewer than two proposers resolve", () => {
+	test("role resolving back to omp-fusion provider is skipped for ultrafusion proposers", () => {
+		const recursive = { provider: "omp-fusion", id: "ultrafusion", name: "omp-fusion/ultrafusion" } as unknown as Model<Api>;
 		setModelsFacadeForTesting(
 			makeFacade({
 				"@slow": SLOW,
-				// only @slow for proposers → builtinDefaultPanel gives [slow] → floor mode → 2
-				// so this actually succeeds; need truly empty
+				"@default": DEFAULT,
+				"@aggregator": AGGREGATOR,
+				"@proposer_1": recursive, // must be skipped
+				"@proposer_2": fakeModel("b", "safe-prop"),
 			}),
 		);
-		// facade with nothing at all for proposers or builtins
-		setModelsFacadeForTesting(makeFacade({ "@slow": SLOW }));
-		// @slow resolves → builtinDefaultPanel → [slow] → floor → 2, so still ok
-		// To force < 2: facade resolves nothing
-		setModelsFacadeForTesting(makeFacade({}));
-		expect(() => resolveRoles("fusion")).toThrow(/could not resolve/);
-	});
-
-	test("throws without facade (session_start not fired)", () => {
-		setModelsFacadeForTesting(undefined);
-		expect(() => resolveRoles("fusion")).toThrow(/model-resolution facade unavailable/);
+		const r = resolveUltrafusionRoles();
+		expect(r.proposers.map((s) => s.model.id)).toEqual(["safe-prop", "safe-prop"]);
 	});
 });

@@ -56,24 +56,21 @@ for cand in "$PLAN" "$DESIGNER" "$VISION"; do
   add_panel "$cand"
 done
 
-# judge: strongest = slow
-JUDGE="$SLOW"
-
+# aggregator: REQUIRED — no implicit default. Strongest = slow. Shared by Fusion and Ultrafusion.
 echo "modelRoles:"
-echo "  fusion_aggregator: $JUDGE"
+echo "  aggregator: $SLOW"
 i=1
 for m in "${PANEL[@]}"; do
-  printf '  fusion_proposer_%d: %s\n' "$i" "$m"
+  printf '  proposer_%d: %s\n' "$i" "$m"
   i=$((i + 1))
 done
 
-# Ultrafusion suggestion: cycle the cross-family panel into 6 explorer + 6 proposer slots.
-NP=${#PANEL[@]}
-for i in 1 2 3 4 5 6; do
-  printf '  fusion_explorer_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
-done
-for i in 1 2 3 4 5 6; do
-  printf '  fusion_proposer_%d: %s\n' "$i" "${PANEL[$(( (i - 1) % NP ))]}"
+# Ultrafusion reads the SAME aggregator/proposer_* keys above, plus its own critic_N wave.
+# Add more proposer_N / critic_N lines yourself for a larger panel — numbered from 1, gaps ignored.
+i=1
+for m in "${PANEL[@]}"; do
+  printf '  critic_%d: %s\n' "$i" "$m"
+  i=$((i + 1))
 done
 
 if [ "${#PANEL[@]}" -lt 2 ]; then

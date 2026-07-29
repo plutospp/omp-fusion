@@ -1,14 +1,15 @@
 ---
 name: fusion
-description: "Run a question through the Fusion proposers then aggregator pipeline using your configured proposers (modelRoles fusion_proposer_1..N / fusion_aggregator), or defaults. Supports --proposers m1 m2 ..., --aggregator m, and --analysis-only. Aliases: --panel, --judge."
+description: "Run a question through the Fusion proposers then aggregator pipeline using your configured proposers (modelRoles proposer_1..N / aggregator — shared with Ultrafusion), or defaults. Supports --proposers m1 m2 ..., --aggregator m, and --analysis-only. Aliases: --panel, --judge."
 argument-hint: "<your question>  [--proposers m1,m2,...] [--aggregator m] [--analysis-only]"
 ---
 Invoke the **fusion** skill on the task below.
 
 Resolve proposer and aggregator models per the skill's section 1: honor any `--proposers`/`--aggregator`
 override in the arguments first (aliases: `--panel` maps to `--proposers`, `--judge` maps to
-`--aggregator`); otherwise use the configured `modelRoles` (`fusion_proposer_1..N`, `fusion_aggregator`);
-otherwise fall back to the skill defaults (proposers `pi/slow` + `pi/default`, aggregator `pi/slow`).
+`--aggregator`); otherwise use the configured `modelRoles` (`proposer_1..N`, `aggregator` — the same
+canonical keys Ultrafusion reads; `aggregator` is required, no fallback); proposers otherwise fall back
+to the skill default (`pi/slow` + `pi/default`).
 Never run fewer than two proposers.
 
 Fan the SAME prompt out to the proposers in parallel (blind, independent, full tools), then have the

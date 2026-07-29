@@ -25,6 +25,9 @@ node_modules/
 .fusion/
 **/.fusion/
 
+# Local spec-workflow tool scaffolding (not project content)
+.spec-workflow/
+
 # OS
 .DS_Store
 Thumbs.db

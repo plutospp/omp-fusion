@@ -44,7 +44,7 @@ export default function ompFusionExtension(pi: ExtensionAPI): void {
 			},
 			{
 				id: "ultrafusion",
-				name: "Ultrafusion (explorers -> proposers -> aggregator)",
+				name: "Ultrafusion (proposers -> critics -> aggregator)",
 				reasoning: false,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

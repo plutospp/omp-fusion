@@ -28,8 +28,9 @@ The value comes from two things and you must preserve both:
 2. **Synthesis, not voting.** The aggregator does not tally or average. It classifies the deliverable,
    then either merges-and-verifies an artifact (Track A) or writes a structured synthesis (Track B).
 
-The aggregator is a **separate subagent**, so its model is chosen independently of the session model.
-The proposers never see the aggregator; the aggregator sees every proposer after all have returned.
+The aggregator is a **separate subagent** with its own configurable model — `aggregator` is
+**required** in `modelRoles`; there is no implicit default. The proposers never see the aggregator;
+the aggregator sees every proposer after all have returned.
 
 ---
 
@@ -43,15 +44,12 @@ Resolve models in this precedence (first that applies wins):
    Aliases: `--panel` maps to `--proposers`; `--judge` maps to `--aggregator`.
 2. **Pinned command** — if invoked via `/fusion-solo|pair|trio`, use that command's fixed proposers
    (see those command files).
-3. **Configured roles** in `~/.omp/agent/config.yml` then `modelRoles`:
-   - aggregator: `pi/fusion_aggregator`
-   - proposers: `pi/fusion_proposer_1`, `pi/fusion_proposer_2`, `pi/fusion_proposer_3` (use however many are set)
-4. **LEGACY fallback** (deprecated, still resolves):
-   - aggregator: `fusion_judge`
-   - proposers: `fusion_panel_1..3`
-5. **Defaults** when no roles are set:
-   - aggregator: `pi/slow`
-   - proposers: `pi/slow` + `pi/default` (a 2-model cross-family wave using built-in roles)
+3. **Configured roles** in `~/.omp/agent/config.yml` → `modelRoles` — the CANONICAL, unprefixed keys,
+   shared with Ultrafusion (configure once, both pipelines pick them up):
+   - aggregator: `pi/aggregator` — **required**; unset and Fusion errors (no implicit default)
+   - proposers: `pi/proposer_1`, `pi/proposer_2`, ... `pi/proposer_N` (use however many are set)
+4. **Built-in proposer default** when no `proposer_N` is set: `pi/slow` + `pi/default` (a 2-model
+   cross-family wave). Does not apply to the aggregator — it has no default.
 
 **Floor / always-available mode:** if only one usable model exists, run that model **twice** as two
 independent cold proposers (`/fusion-solo` does this with `pi/slow`). Never fall below two proposers.
@@ -61,10 +59,10 @@ independent cold proposers (`/fusion-solo` does this with `pi/slow`). Never fall
 
 ```yaml
 modelRoles:
-  fusion_aggregator:  anthropic/claude-opus-4-8:high
-  fusion_proposer_1: anthropic/claude-opus-4-8:high
-  fusion_proposer_2: openai-codex/gpt-5.5:high
-  fusion_proposer_3: google-antigravity/gemini-3.5-flash   # antigravity serves flash; a Pro tier needs google-vertex / google-gemini-cli auth
+  aggregator: anthropic/claude-opus-4-8:high
+  proposer_1: anthropic/claude-opus-4-8:high
+  proposer_2: openai-codex/gpt-5.5:high
+  proposer_3: google-antigravity/gemini-3.5-flash   # antigravity serves flash; a Pro tier needs google-vertex / google-gemini-cli auth
 ```
 
 Resolve role aliases yourself by passing the `pi/<role>` string as the subagent `model` — OMP resolves
@@ -86,8 +84,8 @@ Canonical mechanism — the `eval` tool (deterministic fan-out via `parallel` + 
 const task = `<<<VERBATIM USER TASK>>>`;
 
 // models resolved per section 1 (override then command then roles then defaults); >= 2 entries
-const proposers = ["pi/fusion_proposer_1", "pi/fusion_proposer_2", "pi/fusion_proposer_3"];
-const aggregatorModel = "pi/fusion_aggregator";
+const proposers = ["pi/proposer_1", "pi/proposer_2", "pi/proposer_3"];
+const aggregatorModel = "pi/aggregator";
 
 // `parallel` and `agent` are ASYNC — await them. agent() resolves to the subagent's final text.
 // The fusion-proposer agent supplies the "independent proposer" framing; pass it the verbatim task.
@@ -115,8 +113,8 @@ discover `agents/` from a plugin surface). Use the bundled **`task`** agent and 
 
 ```js
 const task = `<<<VERBATIM USER TASK>>>`;
-const proposers = ["pi/fusion_proposer_1", "pi/fusion_proposer_2", "pi/fusion_proposer_3"];
-const aggregatorModel = "pi/fusion_aggregator";
+const proposers = ["pi/proposer_1", "pi/proposer_2", "pi/proposer_3"];
+const aggregatorModel = "pi/aggregator";
 
 const proposerBrief = [
   "You are ONE independent proposer answering the task below entirely on your own.",
@@ -236,8 +234,8 @@ When the flag is absent, the default (separate aggregator writes the answer) is 
 - Same prompt to every proposer, **verbatim**. No personas, no "you are the optimist/pessimist", no
   per-proposer lenses — unless the user explicitly asks for lensing.
 - Proposers are **blind** to each other and run in **parallel**.
-- The **aggregator is a separate model/subagent** from the proposers and synthesizes; it never just picks
-  a favorite or averages.
+- The **aggregator is a separate subagent** with its own required, configurable model and synthesizes;
+  it never just picks a favorite or averages.
 - Never fewer than two proposers; the floor is the same model run twice.
 - Proposer/aggregator models are **configurable** (roles + override). The fusion *method* is fixed; the
   *models* are the user's choice.

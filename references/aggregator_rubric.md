@@ -12,7 +12,6 @@ actually asks for, so **first classify the deliverable**, then follow the matchi
   two programs glued together don't run.)
 - **Research / analysis task** — the user wants understanding, a recommendation, or a written answer. →
   **Track B: structured synthesis** (the five sections).
-- **Planning task** — the user wants a plan. → **Track C: ordered synthesis.**
 
 When a task is mixed (e.g. "design and implement X"), the implementation is the deliverable: use Track A
 for the artifact and fold the analysis into a short merge rationale.
@@ -67,42 +66,6 @@ were skipped. Be honest about residual uncertainty.
 ### Final answer
 Write the answer the user actually wanted, grounded in the analysis above. Lead with the answer; the five
 sections are the audit trail, not a preamble. Where confidence is low, say so.
-
----
-
-## Track C — Plan: ordered synthesis
-
-You are integrating the proposers' *plans* into one coherent final plan, not stapling them together.
-
-### Weighing evidence
-
-Weight the material in this order:
-- **Cross-proposer consensus is highest confidence.** When two or more proposers independently agree,
-  adopt it unless the evidence contradicts it.
-- **A single proposer's claim must be checked against the other proposals** before you adopt it.
-- **Where proposers contradict each other, adjudicate by reading the relevant proposals** — not by
-  majority. Verify checkable, decision-critical claims with bash/web rather than trusting assertions.
-
-### Output shape
-
-Output exactly this shape, leading with the plan:
-- `# Final plan — <short title>`
-- `## Objective`
-- `## Approach` — ordered, concrete steps (verb + exact target + expected outcome), executable without
-  follow-up questions.
-- `## Key decisions` — each with a one-line rationale.
-- `## Risks & mitigations`
-- `## Verification` — how to prove the executed plan worked.
-- `## Synthesis notes` — the trailing audit trail: what was adopted from which proposer, how each
-  contradiction was resolved, and residual uncertainty. Never launder shaky consensus into false confidence.
-
-The plan leads; Synthesis notes is the audit trail behind it, not a preamble.
-
-### Degraded mode
-
-If your input contains very few proposals (e.g. only one or two survived), you are not excused from
-analysis: do the comparative work yourself across whatever proposals exist — consensus / contradictions /
-unique opinions — fold it into `## Synthesis notes`, then write the final plan the same way.
 
 ---
 

@@ -2,6 +2,260 @@
 
 All notable changes to omp-fusion. Format loosely follows Keep a Changelog.
 
+## [Unreleased] — Added `ultra_aggregator`: Ultrafusion's own dedicated aggregator key
+
+### Added
+- **`ultra_aggregator` — a new, OPTIONAL `modelRoles` key that's Ultrafusion's own dedicated
+  aggregator override**, same pattern as `critic_N` (Ultrafusion's own extra wave, no fusion
+  equivalent). Checked BEFORE the shared `aggregator` role; unset it and Ultrafusion falls
+  through to `aggregator` exactly as before, so existing configs are unaffected. Lets
+  Ultrafusion run a different (e.g. stronger) synthesizer for planning specifically, without
+  changing Fusion/Fusion-fast/Fusion-samp's aggregator. `resolveRoles()` (fusion family) never
+  reads `ultra_aggregator` — it's ultrafusion-only, resolved via
+  `resolveRole(ULTRAFUSION_AGGREGATOR) ?? resolveRole(CANONICAL_AGGREGATOR)` in
+  `extension/shared/models.ts`; the self-recursion guard applies to both tiers for free (the
+  `??` chain falls through if `ultra_aggregator` resolves back to omp-fusion itself).
+- `extension/ultrafusion-handler.ts`'s aggregator progress line now names which role/model
+  won (`Ultrafusion: aggregator integrating (@ultra_aggregator (provider/id))...` or
+  `(@aggregator (provider/id))...`) — needed to verify this feature live; previously the
+  aggregator's identity wasn't logged at all.
+- Docs synced: `skills/ultrafusion/SKILL.md` §1, `commands/ultrafusion.md`, `README.md`
+  (configure-models section + recommended block + How-it-works diagram), `NOTICE`.
+- **Verified live**: `omp -p --model omp-fusion/ultrafusion` with `ultra_aggregator` and
+  `aggregator` both configured shows `aggregator integrating (@ultra_aggregator (...))` in
+  the session log — `ultra_aggregator` correctly took precedence over the shared `aggregator`.
+
+## [Unreleased] — Fixed: `omp-fusion/*` provider models unloadable in copy-mode installs
+
+### Fixed
+- **`extension/shared/prompts.ts` couldn't find `agents/*.md` after `install.sh` copy-mode
+  install** — discovered by an end-to-end smoke test (`omp -p --model omp-fusion/ultrafusion`),
+  which is exactly what this bug was blocking. Root cause: the file used static Bun
+  `import ... with { type: "text" }` specifiers (`../../agents/fusion-aggregator.md`, etc.),
+  which only resolve at the dev / `omp plugin link` nesting depth (`extension/` sits directly
+  at the repo root, a sibling of `agents/`). Copy-mode installs the extension one level deeper,
+  at `<agent-dir>/extensions/omp-fusion/`, while `agents/` stays a direct child of `<agent-dir>`
+  — the same relative path can't reach it from both depths, so the extension threw
+  `Cannot find module '../../agents/fusion-aggregator.md'` on load and every `omp-fusion/*`
+  model (`fusion`, `fusion-fast`, `fusion-samp`, `ultrafusion`) was unusable after a normal
+  copy install. Fixed by replacing the static imports with a runtime probe (`node:fs`
+  `existsSync`/`readFileSync` against both candidate depths, picking whichever exists) that
+  throws a clear, path-naming error if neither resolves — no file duplication, no `install.sh`
+  changes, single source of truth preserved.
+- Verified live: `omp -p --model omp-fusion/ultrafusion "<task>"` now runs the full
+  proposers → critics → aggregator pipeline against the real user config end-to-end.
+
+## [Unreleased] — Aggregator requires explicit config; all LEGACY fallback keys removed
+
+### Changed
+- **Reverted the previous entry's aggregator default-to-session-model behavior.**
+  `aggregator` is once again **required** in `modelRoles` — no fallback of any kind
+  (not the session's current model, not `@slow`, not `@default`). Unset it and
+  Fusion/Ultrafusion throw a clear error naming the missing config. Rationale:
+  "it's still better to configure aggregator in model roles settings" — an
+  implicit guess is exactly the one role a silent default could quietly get wrong.
+- **Removed ALL LEGACY per-pipeline fallback keys** — `fusion_aggregator`,
+  `ultrafusion_aggregator`, `fusion_judge`, `fusion_panel_1..3`, `fusion_proposer_1..6`,
+  `ultrafusion_proposer_1..6`, `ultrafusion_critic_1..3` no longer resolve at all.
+  Only the canonical `aggregator` / `proposer_N` / `critic_N` keys are read. These
+  tiers existed purely for compatibility with configs from before the flat-namespace
+  unification; since the project has no release yet, no real config depends on them.
+  `extension/shared/models.ts` drops `LEGACY_AGGREGATOR`, `LEGACY_FUSION_PANEL`,
+  `LEGACY_FUSION_PROPOSERS`, `LEGACY_ULTRAFUSION_PROPOSERS`, `LEGACY_ULTRAFUSION_CRITICS`,
+  `LEGACY_TIERS`, the `LegacyTier` interface, `SLOTS_6`, `resolveFirst`, and
+  `resolveSessionModel` (dead code after the revert above).
+- **Proposer/critic built-in-default floor is unchanged** — `proposer_N`/`critic_N`
+  still fall back to the `@slow` + `@default` cross-family pair (cycled per shape)
+  when nothing is configured; this is the zero-config floor that backs
+  `/fusion-solo` and friends, not a compatibility shim, so it stays.
+- `scripts/detect_panel.sh` emits an uncommented `aggregator:` line again (it is
+  required config, not an optional suggestion).
+- Docs synced across both `SKILL.md` files, all four commands, `README.md`,
+  `NOTICE`, `package.json`, and `docs/PR-TO-OH-MY-PI.md` — every "LEGACY fallback"
+  step and "defaults to the session's current model" claim removed; aggregator is
+  now described as required everywhere it's mentioned.
+- `extension/shared/models.test.ts` rewritten: legacy-tier tests deleted outright
+  (not adapted), new coverage added for "aggregator unconfigured throws" and
+  "aggregator resolving to omp-fusion itself is treated as unconfigured".
+
+## [Unreleased] — Aggregator defaults to the session's current model
+
+### Changed
+- **Aggregator terminal fallback changed from `@slow` to the session's current
+  model (`current()`), guarded against omp-fusion self-recursion, then `@default`.**
+  When no `aggregator` role (or legacy `fusion_aggregator`/`ultrafusion_aggregator`/
+  `fusion_judge`) is configured, the aggregator now runs on whatever model the
+  session is already using — "don't set the role model of aggregator, just let it
+  be the currently used model." Set `aggregator` explicitly to override.
+- `scripts/detect_panel.sh` no longer emits an explicit `aggregator:` line in its
+  suggested config — the aggregator is left unset so it defaults to the session
+  model. (A commented-out `aggregator:` line is included for users who want to pin it.)
+- Recommended `modelRoles` example in `skills/fusion/SKILL.md` no longer leads with
+  an `aggregator:` line.
+- Fusion SKILL's "separate model" invariant softened: the aggregator is always a
+  separate *subagent/context*, but only a separate *model* when `aggregator` is set.
+
+## [Unreleased] — Set-and-forget canonical ceiling (32/16); decouple fallback cycling; open-ended docs
+
+### Changed
+- **Canonical `proposer_*` widened to 32 slots; canonical `critic_*` widened to
+  16 slots** — a large, deliberately generous ceiling meant to be set once and
+  not need bumping again as real rosters grow (checking an unconfigured role
+  is a free local lookup, no network call).
+- **Fallback cycling DECOUPLED from the canonical range.** When nothing/little
+  is configured and the resolver falls back to duplicating a small set (2
+  built-in defaults, or up to 3 `fusion_panel_*` entries) to fill slots, it now
+  always cycles to a fixed `FALLBACK_CYCLE_PROPOSERS`/`FALLBACK_CYCLE_CRITICS`
+  (6/3, the original historical width) regardless of how wide the canonical
+  range grows. Duplicating the same 2 models past ~6 times bought zero
+  additional signal (Fusion's value is independent divergence, not repeat
+  sampling) while still paying real API cost per call — the previous coupling
+  (cycling to the full canonical width) made this worse with every widening.
+- **Docs describe the pattern, not the exact ceiling.** Two prior rounds of
+  "increase if needed" each required hand-syncing the exact number across
+  `skills/fusion/SKILL.md`, `skills/ultrafusion/SKILL.md`, `commands/
+  ultrafusion.md`, `README.md`'s Use table, and `detect_panel.sh` — and twice
+  a `SWAP` on a YAML example block accidentally dropped the `modelRoles:`
+  header line during that sync. Docs now say "as many `proposer_N`/`critic_N`
+  as you configure, numbered from 1" instead of a literal count; the
+  "recommended" YAML examples show a small illustrative pattern (3 proposers,
+  2 critics) instead of exhaustively listing every slot. Raising the ceiling
+  in `extension/shared/models.ts` no longer requires touching any doc.
+- `scripts/detect_panel.sh`'s critic suggestion no longer hardcodes a loop
+  bound — it mirrors however many distinct models `PANEL` found (same as the
+  proposer suggestion), with a comment that more `proposer_N`/`critic_N` lines
+  can be added by hand.
+
+### Fixed
+- Caught and fixed two more `SWAP`-dropped-a-line mistakes while editing
+  `skills/ultrafusion/SKILL.md`: a duplicated "resolved per section 1" comment
+  next to the eval example, and a frontmatter `description` sentence broken
+  mid-clause ("...`critic_N` — `aggregator` defaults. Use when...") where a
+  `SWAP` boundary didn't include the rest of the sentence. Re-read the full
+  file end to end afterward to confirm no other instances.
+
+## [Unreleased] — Widen canonical pool to proposer_1..9 / critic_1..6
+
+### Changed
+- **Canonical `proposer_*` widened from 6 to 9 slots; canonical `critic_*` widened
+  from 3 to 6 slots.** A 6-model proposer roster (and a 3-model critic roster) was
+  too narrow for a real multi-provider setup. `aggregator` is unaffected (always 1).
+- LEGACY key ranges (`fusion_proposer_1..6`, `ultrafusion_proposer_1..6`,
+  `ultrafusion_critic_1..3`, `fusion_panel_1..3`) keep their original historical
+  width — only the canonical bare-name tier widened. Existing configs on the old
+  LEGACY keys are unaffected.
+- All "fill to N" cycling targets that mirror the canonical proposer/critic pool
+  width (built-in-default cycling for fusion-fast/fusion-samp/ultrafusion,
+  `fusion_panel_*` cycling for ultrafusion) now cycle to 9/6 instead of 6/3.
+- `skills/fusion/SKILL.md` §1 (unaffected — always used "however many are set", no
+  fixed-count claim) is unchanged; `skills/ultrafusion/SKILL.md` §1, its recommended
+  `modelRoles` example, and its `eval` proposer/critic arrays now show 9/6.
+  `commands/ultrafusion.md`, `README.md`'s Use table, and `scripts/detect_panel.sh`'s
+  critic-suggestion loop updated to match.
+
+### Config
+- Populated `~/.omp/agent/config.yml` `modelRoles` with `aggregator` + all 9
+  `proposer_*` + all 6 `critic_*`, resolved against the live `omp models` catalog
+  (not just the cached `models.db` snapshot, which was stale for at least one
+  entry — see Fixed). Existing roles (`default`, `advisor`, `task`, `plan`, `smol`,
+  `vision`, `commit`, `slow`, `designer`, `consultant`, `tiny`) untouched.
+
+### Fixed
+- Caught mid-edit: two `SKILL.md` `modelRoles` YAML examples lost their top-level
+  `modelRoles:` key during a `SWAP` that replaced the header line without retyping
+  it, leaving orphaned-indent YAML. Both re-verified and repaired.
+- The cached `models.db` catalog listed `gemini-3.1-pro` under `google-antigravity`;
+  live `omp models find` shows it is NOT actually served there (only `cursor` and
+  `google` carry it) — config uses the live-verified `cursor/gemini-3.1-pro`.
+- Live `omp models` also surfaced a `commandcode` gateway provider absent from the
+  cached catalog entirely; it carries `deepseek-v4-pro` and `mimo-v2.5-pro` exactly
+  as requested, correcting an initial substitution guess.
+
+### Known guess (unresolved, flagged to the user)
+- `proposer_1` (`grok-4.5` via `cursor`): no bare `grok-4.5` exists under `cursor` —
+  only 6 quality/speed variants (`cursor-grok-4.5-{high,high-fast,low,low-fast,
+  medium,medium-fast}`). Set to `cursor/cursor-grok-4.5-medium` as a balanced
+  default; unconfirmed against user intent.
+
+## [Unreleased] — Unify role namespace: aggregator / proposer_* / critic_*
+
+### Changed
+- **One flat, canonical role namespace across all four pipelines.** `aggregator` and
+  `proposer_1..6` are shared by Fusion, Fusion-fast, Fusion-samp, and Ultrafusion —
+  configure them once and every pipeline picks them up. `critic_1..3` is Ultrafusion's
+  own extra wave (no fusion shape has one).
+- **Former per-pipeline keys demoted to LEGACY fallback**, checked only when the bare
+  canonical name is unset: `fusion_proposer_1..6` / `fusion_aggregator` (fusion's
+  former canonical), `fusion_panel_1..3` / `fusion_judge` (older historical names),
+  `ultrafusion_proposer_1..6` / `ultrafusion_critic_1..3` / `ultrafusion_aggregator`
+  (ultrafusion's former canonical). All existing configs keep resolving to the same
+  models without edits.
+- `extension/shared/models.ts`: `resolveRoles(shape)` and `resolveUltrafusionRoles()`
+  both check the bare canonical tier first, then their respective legacy chains, then
+  built-in defaults — algorithm (floor mode, cycling, fallback order) is otherwise
+  unchanged from the prior revert. `fusion-handler.ts` / `fusion-fast-handler.ts` /
+  `fusion-samp-handler.ts` are untouched (they still just call `resolveRoles(shape)`).
+
+### Why
+Two separate prefixed namespaces (`fusion_*` for Fusion/fast/samp, `ultrafusion_*` for
+Ultrafusion) forced duplicate config for users who wanted the same model roster across
+all four pipelines. One shared `aggregator`/`proposer_*` pool removes that duplication;
+per-pipeline divergence is still possible via the legacy prefixed keys.
+
+### Fixed
+- `skills/fusion/SKILL.md` / `skills/ultrafusion/SKILL.md` §1 precedence, recommended
+  `modelRoles` blocks, and `eval` `pi/<role>` examples updated to the canonical names.
+- `commands/fusion.md` / `fusion-pair.md` / `fusion-trio.md` / `ultrafusion.md` role
+  mentions updated.
+- `scripts/detect_panel.sh` now suggests one `aggregator` + `proposer_1..N` block
+  (previously duplicated as separate `fusion_*`/`ultrafusion_*` suggestions).
+- `README.md` (configure, use table, use-as-model, all four how-it-works diagrams) and
+  `NOTICE` updated to the canonical names.
+
+## [Unreleased] — Revert: ultrafusion back to proposers → critics → aggregator
+
+### Changed
+- **Ultrafusion reverted to its original three-wave shape**: `proposers -> critics -> aggregator`
+  (was `explorers -> proposers -> aggregator` from the "unify role schema" refactor below). The
+  explorer wave and the "critic duty merged into proposer" idea are undone; critics are once again
+  a distinct wave with their own agent, rubric, and role keys.
+- **Ultrafusion's role namespace is dedicated again**: `ultrafusion_proposer_1..6`,
+  `ultrafusion_critic_1..3`, `ultrafusion_aggregator` are primary keys for ultrafusion, not a
+  deprecated LEGACY fallback tier. `extension/shared/models.ts` gains a standalone
+  `resolveUltrafusionRoles()` (restored, not routed through the shared `resolveRoles(shape)` used
+  by fusion/fusion-fast/fusion-samp).
+- **Fusion, fusion-fast, and fusion-samp are unchanged** — still `proposers -> aggregator` on the
+  canonical `fusion_proposer_1..6` / `fusion_aggregator` namespace from the schema-unification work;
+  their handlers, role resolution, and behavior are untouched by this revert.
+
+### Restored
+- `agents/ultrafusion-{proposer,critic,aggregator}.md` (dedicated ultrafusion agents; distinct from
+  `agents/fusion-{proposer,aggregator}.md`, which fusion keeps using).
+- `skills/ultrafusion/references/critic_rubric.md` and `skills/ultrafusion/references/aggregator_rubric.md`
+  (ultrafusion-specific rubrics, split back out of the consolidated `references/aggregator_rubric.md`).
+- `extension/ultrafusion-handler.ts`'s three-wave implementation (proposer wave, then critic wave with
+  each critic reading all proposals, then aggregator with critic comments as primary input and
+  proposals as grounding).
+
+### Removed
+- `agents/fusion-explorer.md` and the `FUSION_EXPLORER_PROMPT` export — no pipeline uses an explorer
+  wave anymore.
+- Track C ("Plan: ordered synthesis") trimmed out of `references/aggregator_rubric.md` — that file is
+  fusion-only again (Track A/B); ultrafusion has its own dedicated aggregator rubric.
+
+### Fixed
+- `extension/index.ts`'s `omp-fusion/ultrafusion` model registration still said
+  `"Ultrafusion (explorers -> proposers -> aggregator)"` — corrected to
+  `"Ultrafusion (proposers -> critics -> aggregator)"`.
+- `extension/shared/models.test.ts` rewritten for the reverted shape: dropped the explorer/6-slot-
+  critics-widening assertions, added coverage for `resolveUltrafusionRoles()` (canonical keys,
+  fusion-panel fallback, floor mode, aggregator fallback chain, self-recursion guard, error cases).
+- `README.md`'s "How it works" ultrafusion diagram and "Files" list, which had drifted out of sync
+  with the "unify role schema" commit below (they still described the pre-refactor shape even after
+  that commit landed) — now correct for the current (reverted) state. Also corrected the intro
+  table's Fusion row, which had never been updated off `panel -> judge` wording even when Fusion's
+  own terminology changed.
+
 ## [Unreleased] — Unified role schema
 
 ### Changed
