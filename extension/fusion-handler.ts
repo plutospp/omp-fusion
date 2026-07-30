@@ -78,7 +78,7 @@ export function fusionStream(
 				(r): r is { index: number; label: string; text: string } => r !== undefined,
 			);
 			handlerStream.progress(
-				`Fusion: ${survivors.length}/${proposers.length} proposers returned.`,
+				`Fusion: ${survivors.length}/${proposers.length} proposers returned: ${survivors.map((s) => s.label).join(", ")}`,
 			);
 
 			if (survivors.length < 2) {

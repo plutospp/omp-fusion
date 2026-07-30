@@ -89,7 +89,7 @@ export function fusionFastStream(
 
 			const proposals = result.successes;
 			handlerStream.progress(
-				`Fusion-fast: ${proposals.length}/${proposers.length} proposers returned (majority=${majority}).`,
+				`Fusion-fast: ${proposals.length}/${proposers.length} proposers returned (majority=${majority}): ${proposals.map((p) => p.label).join(", ")}`,
 			);
 
 			if (proposals.length < 2) {

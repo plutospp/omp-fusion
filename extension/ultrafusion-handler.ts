@@ -76,7 +76,7 @@ export function ultrafusionStream(
 				(r): r is { index: number; label: string; text: string } => r !== undefined,
 			);
 			handlerStream.progress(
-				`Ultrafusion: ${proposals.length}/${proposers.length} proposers returned.`,
+				`Ultrafusion: ${proposals.length}/${proposers.length} proposers returned: ${proposals.map((p) => p.label).join(", ")}`,
 			);
 
 			if (proposals.length < 2) {
@@ -154,7 +154,7 @@ export function ultrafusionStream(
 					),
 				);
 				handlerStream.progress(
-					`Ultrafusion: ${comments.length}/${critics.length} critics returned.`,
+					`Ultrafusion: ${comments.length}/${critics.length} critics returned: ${comments.map((c) => c.label).join(", ")}`,
 				);
 			}
 

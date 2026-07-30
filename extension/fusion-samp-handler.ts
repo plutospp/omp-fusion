@@ -98,7 +98,7 @@ export function fusionSampStream(
 				(r): r is { index: number; label: string; text: string } => r !== undefined,
 			);
 			handlerStream.progress(
-				`Fusion-samp: ${proposals.length}/${sampled.length} sampled proposers returned.`,
+				`Fusion-samp: ${proposals.length}/${sampled.length} sampled proposers returned: ${proposals.map((p) => p.label).join(", ")}`,
 			);
 
 			if (proposals.length < 2) {
