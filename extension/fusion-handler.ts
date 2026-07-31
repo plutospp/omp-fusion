@@ -1,23 +1,16 @@
-import { completeSimple } from "@oh-my-pi/pi-ai";
-import type {
-	Api,
-	AssistantMessage,
-	AssistantMessageEventStream,
-	Context,
-	Model,
-	SimpleStreamOptions,
-} from "@oh-my-pi/pi-ai";
-import { resolveRoles, streamOptionsFor } from "./shared/models";
+import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import { resolveRoles } from "./shared/models";
 import {
 	FUSION_AGGREGATOR_PROMPT,
+	FUSION_AGGREGATOR_THINKING,
 	FUSION_PROPOSER_PROMPT,
+	FUSION_PROPOSER_THINKING,
 } from "./shared/prompts";
+import { runAggregator, runWave, truncationBudgetChars } from "./shared/pipeline";
 import {
-	CHARS_PER_TOKEN_ESTIMATE,
-	DEFAULT_CONTEXT_WINDOW_ESTIMATE,
 	createHandlerStream,
-	extractAnswerText,
 	extractTask,
+	priorMessagesChars,
 	sumUsage,
 	truncateForContext,
 } from "./shared/stream";
@@ -31,7 +24,6 @@ export function fusionStream(
 	const handlerStream = createHandlerStream(model);
 
 	void (async () => {
-		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
 			const { task, priorMessages } = extractTask(context);
 			const { proposers, aggregator } = resolveRoles("fusion");
@@ -40,43 +32,24 @@ export function fusionStream(
 				`Fusion: fanning out to ${proposers.length} proposers: ${proposers.map((s) => s.label).join(", ")}`,
 			);
 
-			const results = await Promise.all(
-				proposers.map(async (slot, i) => {
-					try {
-						const response = await completeSimple(
-							slot.model,
-							{
-								systemPrompt: [FUSION_PROPOSER_PROMPT],
-								messages: [
-									...priorMessages,
-									{
-										role: "user",
-										content: [{ type: "text", text: task }],
-										timestamp: Date.now(),
-									},
-								],
-							},
-							streamOptionsFor(slot.model, options?.signal),
-						);
-						innerUsages.push(response.usage);
-						const text = extractAnswerText(response);
-						if (response.stopReason === "error" || text === "") {
-							const reason = response.errorMessage ?? (text === "" ? "returned empty output" : "stopReason=error");
-							handlerStream.progress(`Fusion: proposer ${slot.label} failed: ${reason}`);
-							return undefined;
-						}
-						return { index: i + 1, label: slot.label, text };
-					} catch (err) {
-						const msg = err instanceof Error ? err.message : String(err);
-						handlerStream.progress(`Fusion: proposer ${slot.label} failed: ${msg}`);
-						return undefined;
-					}
-				}),
-			);
+			const wave = await runWave({
+				pipeline: "Fusion",
+				roleNoun: "proposer",
+				slots: proposers.map((slot, i) => ({ slot, index: i + 1 })),
+				systemPrompt: FUSION_PROPOSER_PROMPT,
+				userText: task,
+				priorMessages,
+				outerOptions: options,
+				roleThinking: FUSION_PROPOSER_THINKING,
+				handlerStream,
+			});
 
-			const survivors = results.filter(
-				(r): r is { index: number; label: string; text: string } => r !== undefined,
-			);
+			if (wave.parentAborted) {
+				handlerStream.fail("aborted", "Fusion: cancelled.");
+				return;
+			}
+
+			const survivors = wave.survivors;
 			handlerStream.progress(
 				`Fusion: ${survivors.length}/${proposers.length} proposers returned: ${survivors.map((s) => s.label).join(", ")}`,
 			);
@@ -85,18 +58,19 @@ export function fusionStream(
 				if (survivors.length === 1) {
 					handlerStream.finish(
 						`${survivors[0].text}\n\n[Fusion: proposer stage degraded to 1 answer — aggregator synthesis skipped.]`,
-						sumUsage(innerUsages),
+						sumUsage(survivors.map((s) => s.usage)),
 					);
 				} else {
-					handlerStream.fail(
-						"error",
-						"Fusion: all proposer models failed to produce an answer.",
-					);
+					handlerStream.fail("error", "Fusion: all proposer models failed to produce an answer.");
 				}
 				return;
 			}
-			const aggregatorContextWindow = aggregator.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW_ESTIMATE;
-			const maxChars = (aggregatorContextWindow * CHARS_PER_TOKEN_ESTIMATE) / (2 * survivors.length);
+
+			const maxChars = truncationBudgetChars(
+				aggregator.model.contextWindow,
+				priorMessagesChars(priorMessages),
+				survivors.length,
+			);
 			const aggregatorInput =
 				`=== ORIGINAL TASK ===\n${task}\n\n` +
 				survivors
@@ -110,46 +84,25 @@ export function fusionStream(
 					)
 					.join("\n\n");
 
-			handlerStream.progress(`Fusion: aggregator ${aggregator.label} synthesizing...`);
-			const aggregatorResult = await completeSimple(
-				aggregator.model,
-				{
-					systemPrompt: [FUSION_AGGREGATOR_PROMPT],
-					messages: [
-						...priorMessages,
-						{
-							role: "user",
-							content: [{ type: "text", text: aggregatorInput }],
-							timestamp: Date.now(),
-						},
-					],
-				},
-				streamOptionsFor(aggregator.model, options?.signal),
-			);
-
-			if (aggregatorResult.stopReason === "error") {
-				handlerStream.fail(
-					"error",
-					`Fusion aggregator call failed: ${aggregatorResult.errorMessage ?? "stopReason=error"}`,
-				);
-				return;
-			}
-
-			const finalText = extractAnswerText(aggregatorResult);
-			if (finalText === "") {
-				handlerStream.fail("error", "Fusion aggregator returned an empty answer.");
-				return;
-			}
+			const result = await runAggregator({
+				pipeline: "Fusion",
+				aggregator,
+				systemPrompt: FUSION_AGGREGATOR_PROMPT,
+				aggregatorInput,
+				priorMessages,
+				outerOptions: options,
+				roleThinking: FUSION_AGGREGATOR_THINKING,
+				handlerStream,
+				progressLine: `Fusion: aggregator ${aggregator.label} synthesizing...`,
+			});
+			if (!result) return;
 
 			handlerStream.finish(
-				finalText,
-				sumUsage([...innerUsages, aggregatorResult.usage]),
+				result.text,
+				sumUsage([...survivors.map((s) => s.usage), result.usage]),
 			);
 		} catch (err) {
-			handlerStream.fail(
-				"error",
-				err instanceof Error ? err.message : String(err),
-			);
+			handlerStream.fail("error", err instanceof Error ? err.message : String(err));
 		}
 	})();
 

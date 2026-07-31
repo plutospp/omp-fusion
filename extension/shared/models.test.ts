@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { Api, Model } from "@oh-my-pi/pi-ai";
 import type { ExtensionModelQuery } from "@oh-my-pi/pi-coding-agent";
-import { resolveRoles, resolveUltrafusionRoles, setModelsFacadeForTesting } from "./models";
+import { innerThinkingOptions, parseReasoningEffort, resolveRoles, resolveUltrafusionRoles, setModelsFacadeForTesting } from "./models";
 
 function fakeModel(provider: string, id: string): Model<Api> {
 	return { provider, id, name: `${provider}/${id}` } as unknown as Model<Api>;
@@ -368,5 +368,34 @@ describe("self-recursion guard", () => {
 		);
 		const r = resolveUltrafusionRoles();
 		expect(r.proposers.map((s) => s.model.id)).toEqual(["safe-prop", "safe-prop"]);
+	});
+});
+
+
+describe("innerThinkingOptions / parseReasoningEffort", () => {
+	const HIGH = parseReasoningEffort("high");
+	const LOW = parseReasoningEffort("low");
+	test("outer reasoning wins over role default", () => {
+		expect(innerThinkingOptions({ reasoning: LOW }, HIGH).reasoning).toBe(LOW);
+	});
+	test("role default used when outer absent", () => {
+		expect(innerThinkingOptions(undefined, HIGH).reasoning).toBe(HIGH);
+	});
+	test("both absent -> no reasoning key", () => {
+		expect(innerThinkingOptions(undefined, undefined).reasoning).toBeUndefined();
+	});
+	test("disableReasoning suppresses reasoning", () => {
+		const o = innerThinkingOptions({ disableReasoning: true, reasoning: HIGH }, HIGH);
+		expect(o.disableReasoning).toBe(true);
+		expect(o.reasoning).toBeUndefined();
+	});
+	test("hideThinkingSummary forwarded", () => {
+		expect(innerThinkingOptions({ hideThinkingSummary: true }, undefined).hideThinkingSummary).toBe(true);
+	});
+	test("parseReasoningEffort", () => {
+		expect(parseReasoningEffort("high")).toBe(HIGH);
+		expect(parseReasoningEffort("HIGH")).toBe(HIGH);
+		expect(parseReasoningEffort("bogus")).toBeUndefined();
+		expect(parseReasoningEffort(undefined)).toBeUndefined();
 	});
 });

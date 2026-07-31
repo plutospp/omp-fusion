@@ -78,17 +78,54 @@ export function captureModelsFacade(pi: ExtensionAPI): void {
 	});
 }
 
-/** Build the `SimpleStreamOptions` (resolved API key + signal) needed to call `completeSimple`/`streamSimple` against an inner model. */
-export function streamOptionsFor(model: Model<Api>, signal?: AbortSignal): SimpleStreamOptions {
+/** Build the `SimpleStreamOptions` (resolved API key + signal + thinking options) needed to call `completeSimple`/`streamSimple` against an inner model. */
+export function streamOptionsFor(model: Model<Api>, signal?: AbortSignal, thinking?: InnerThinkingOptions): SimpleStreamOptions {
 	return {
 		apiKey: modelRegistry?.resolver(model),
 		signal,
+		...(thinking?.disableReasoning
+			? { disableReasoning: true }
+			: thinking?.reasoning
+				? { reasoning: thinking.reasoning }
+				: {}),
+		...(thinking?.hideThinkingSummary ? { hideThinkingSummary: true } : {}),
 	};
 }
 
 export interface ResolvedSlot {
 	model: Model<Api>;
 	label: string;
+}
+
+/** Effort accepted by `SimpleStreamOptions.reasoning`, without importing pi-catalog at runtime (copy-mode installs have no node_modules to resolve it from). */
+export type ReasoningEffort = NonNullable<SimpleStreamOptions["reasoning"]>;
+
+const REASONING_EFFORTS: readonly string[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** Parse a raw thinking-level string (e.g. agent frontmatter `thinkingLevel: high`); undefined when absent or unrecognized. */
+export function parseReasoningEffort(raw: string | undefined): ReasoningEffort | undefined {
+	if (!raw) return undefined;
+	const value = raw.trim().toLowerCase();
+	return REASONING_EFFORTS.includes(value) ? (value as ReasoningEffort) : undefined;
+}
+
+/** Thinking-related options forwarded to one inner `completeSimple` call. */
+export interface InnerThinkingOptions {
+	reasoning?: ReasoningEffort;
+	disableReasoning?: boolean;
+	hideThinkingSummary?: boolean;
+}
+
+/** Effective thinking options for one inner call: the outer (per-call) settings win over the role's frontmatter default; `disableReasoning` suppresses `reasoning`. */
+export function innerThinkingOptions(outer: SimpleStreamOptions | undefined, roleDefault: ReasoningEffort | undefined): InnerThinkingOptions {
+	if (outer?.disableReasoning) {
+		return { disableReasoning: true, ...(outer.hideThinkingSummary ? { hideThinkingSummary: true } : {}) };
+	}
+	const reasoning = outer?.reasoning ?? roleDefault;
+	return {
+		...(reasoning ? { reasoning } : {}),
+		...(outer?.hideThinkingSummary ? { hideThinkingSummary: true } : {}),
+	};
 }
 
 /**

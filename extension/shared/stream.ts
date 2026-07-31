@@ -76,6 +76,30 @@ export function extractAnswerText(message: AssistantMessage): string {
 	return parts.join("\n").trim();
 }
 
+/** Extract the thinking/reasoning content of a completed `AssistantMessage` — an inner model's own reasoning. Empty (never throws) when the message carries no thinking blocks. `redactedThinking` is skipped: it has no readable text. */
+export function extractThinkingText(message: AssistantMessage): string {
+	const parts: string[] = [];
+	for (const block of message.content) {
+		if (block.type === "thinking") parts.push(block.thinking);
+	}
+	return parts.join("\n").trim();
+}
+
+/** Rough character count of the replayed prior conversation, for context-window budgeting. `extractPriorMessages` normalizes prior turns to text-only content, so only text blocks are counted. */
+export function priorMessagesChars(priorMessages: Context["messages"]): number {
+	let total = 0;
+	for (const message of priorMessages) {
+		if (typeof message.content === "string") {
+			total += message.content.length;
+			continue;
+		}
+		for (const block of message.content as readonly { type: string; text?: string }[]) {
+			if (block.type === "text" && block.text) total += block.text.length;
+		}
+	}
+	return total;
+}
+
 /** `Model.contextWindow` is a token count, not a character count; ~4 chars/token is a standard rough estimate for English text, used to convert a context-window token budget into a character budget for `truncateForContext`. */
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
@@ -118,6 +142,8 @@ export function sumUsage(usages: Usage[]): Usage {
 export interface HandlerStreamController {
 	stream: AssistantMessageEventStream;
 	progress(line: string): void;
+	/** Append a COMPLETED thinking block carrying real inner-model reasoning (vs progress()'s synthetic status block). Closes the open progress block first; a later progress() opens a fresh block. No-op on empty/whitespace text. */
+	reasoning(label: string, thinking: string): void;
 	/** Emit the terminal `done` event with the final answer text and aggregated usage. */
 	finish(finalText: string, usage: Usage): void;
 	/** Emit the terminal `error` event. */
@@ -174,6 +200,23 @@ export function createHandlerStream(model: Model<Api>): HandlerStreamController 
 			thinkingBlock.thinking += delta;
 			stream.push({ type: "thinking_delta", contentIndex: thinkingIndex, delta, partial });
 		},
+		reasoning(label: string, thinking: string): void {
+			const text = thinking.trim();
+			if (!text) return;
+			ensureStreamStarted();
+			closeThinkingIfOpen();
+			// Reset progress-block state so a later progress() opens a fresh block
+			// instead of appending deltas to the closed one.
+			thinkingBlock = undefined;
+			thinkingIndex = -1;
+			thinkingClosed = false;
+			const block: ThinkingContent = { type: "thinking", thinking: `── ${label} ──\n${text}` };
+			const index = blocks.length;
+			blocks.push(block);
+			stream.push({ type: "thinking_start", contentIndex: index, partial });
+			stream.push({ type: "thinking_delta", contentIndex: index, delta: block.thinking, partial });
+			stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial });
+		},
 		finish(finalText: string, usage: Usage): void {
 			ensureStreamStarted();
 			closeThinkingIfOpen();
@@ -190,6 +233,14 @@ export function createHandlerStream(model: Model<Api>): HandlerStreamController 
 		},
 		fail(reason: "aborted" | "error", message: string): void {
 			ensureStreamStarted();
+			closeThinkingIfOpen();
+			const textBlock: TextContent = { type: "text", text: "" };
+			const textIndex = blocks.length;
+			blocks.push(textBlock);
+			stream.push({ type: "text_start", contentIndex: textIndex, partial });
+			stream.push({ type: "text_delta", contentIndex: textIndex, delta: message, partial });
+			textBlock.text = message;
+			stream.push({ type: "text_end", contentIndex: textIndex, content: message, partial });
 			partial.stopReason = reason === "aborted" ? "aborted" : "error";
 			partial.errorMessage = message;
 			partial.duration = performance.now() - perfStart;

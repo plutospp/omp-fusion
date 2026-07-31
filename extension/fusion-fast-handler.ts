@@ -1,24 +1,16 @@
-import { completeSimple } from "@oh-my-pi/pi-ai";
-import type {
-	Api,
-	AssistantMessage,
-	AssistantMessageEventStream,
-	Context,
-	Model,
-	SimpleStreamOptions,
-} from "@oh-my-pi/pi-ai";
-import { resolveRoles, streamOptionsFor } from "./shared/models";
+import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import { resolveRoles } from "./shared/models";
 import {
 	FUSION_AGGREGATOR_PROMPT,
+	FUSION_AGGREGATOR_THINKING,
 	FUSION_PROPOSER_PROMPT,
+	FUSION_PROPOSER_THINKING,
 } from "./shared/prompts";
+import { runAggregator, runWave, truncationBudgetChars } from "./shared/pipeline";
 import {
-	CHARS_PER_TOKEN_ESTIMATE,
-	DEFAULT_CONTEXT_WINDOW_ESTIMATE,
 	createHandlerStream,
-	extractAnswerText,
 	extractTask,
-	raceToMajority,
+	priorMessagesChars,
 	sumUsage,
 	truncateForContext,
 } from "./shared/stream";
@@ -32,7 +24,6 @@ export function fusionFastStream(
 	const handlerStream = createHandlerStream(model);
 
 	void (async () => {
-		const innerUsages: AssistantMessage["usage"][] = [];
 		try {
 			const { task, priorMessages } = extractTask(context);
 			const { proposers, aggregator } = resolveRoles("fusion-fast");
@@ -42,52 +33,25 @@ export function fusionFastStream(
 				`Fusion-fast: fanning out to ${proposers.length} proposers: ${proposers.map((s) => s.label).join(", ")}`,
 			);
 
-			const result = await raceToMajority(
-				proposers.map((slot, i) => async (signal: AbortSignal) => {
-					try {
-						const response = await completeSimple(
-							slot.model,
-							{
-								systemPrompt: [FUSION_PROPOSER_PROMPT],
-								messages: [
-									...priorMessages,
-									{
-										role: "user",
-										content: task,
-										timestamp: Date.now(),
-									},
-								],
-							},
-							streamOptionsFor(slot.model, signal),
-						);
-						innerUsages.push(response.usage);
-						if (response.stopReason === "aborted") {
-							throw new Error("__aborted__");
-						}
-						const text = extractAnswerText(response);
-						if (response.stopReason === "error" || text === "") {
-							const reason = response.errorMessage ?? (text === "" ? "returned empty output" : "stopReason=error");
-							handlerStream.progress(`Fusion-fast: proposer ${slot.label} failed: ${reason}`);
-							return undefined;
-						}
-						return { index: i + 1, label: slot.label, text };
-					} catch (err) {
-						if (err instanceof Error && err.message === "__aborted__") throw err;
-						const msg = err instanceof Error ? err.message : String(err);
-						handlerStream.progress(`Fusion-fast: proposer ${slot.label} failed: ${msg}`);
-						return undefined;
-					}
-				}),
-				majority,
-				options?.signal,
-			);
+			const wave = await runWave({
+				pipeline: "Fusion-fast",
+				roleNoun: "proposer",
+				slots: proposers.map((slot, i) => ({ slot, index: i + 1 })),
+				systemPrompt: FUSION_PROPOSER_PROMPT,
+				userText: task,
+				priorMessages,
+				outerOptions: options,
+				roleThinking: FUSION_PROPOSER_THINKING,
+				handlerStream,
+				quorum: majority,
+			});
 
-			if (result.parentAborted) {
+			if (wave.parentAborted) {
 				handlerStream.fail("aborted", "Fusion-fast: cancelled.");
 				return;
 			}
 
-			const proposals = result.successes;
+			const proposals = wave.survivors;
 			handlerStream.progress(
 				`Fusion-fast: ${proposals.length}/${proposers.length} proposers returned (majority=${majority}): ${proposals.map((p) => p.label).join(", ")}`,
 			);
@@ -96,20 +60,19 @@ export function fusionFastStream(
 				if (proposals.length === 1) {
 					handlerStream.finish(
 						`${proposals[0].text}\n\n[Fusion-fast: proposer stage degraded to 1 answer — aggregator synthesis skipped.]`,
-						sumUsage(innerUsages),
+						sumUsage(proposals.map((p) => p.usage)),
 					);
 				} else {
-					handlerStream.finish(
-						"[Fusion-fast: proposer stage produced no usable answers — aggregator synthesis skipped.]",
-						sumUsage(innerUsages),
-					);
+					handlerStream.fail("error", "Fusion-fast: all proposer models failed to produce an answer.");
 				}
 				return;
 			}
 
-			const aggregatorMaxChars =
-				((aggregator.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW_ESTIMATE) * CHARS_PER_TOKEN_ESTIMATE) /
-				(2 * proposals.length);
+			const aggregatorMaxChars = truncationBudgetChars(
+				aggregator.model.contextWindow,
+				priorMessagesChars(priorMessages),
+				proposals.length,
+			);
 			const aggregatorInput = [
 				`=== ORIGINAL TASK ===\n${task}`,
 				...proposals.map(
@@ -122,54 +85,25 @@ export function fusionFastStream(
 				),
 			].join("\n\n");
 
-			handlerStream.progress("Fusion-fast: aggregator integrating...");
-			const aggregatorResult = await completeSimple(
-				aggregator.model,
-				{
-					systemPrompt: [FUSION_AGGREGATOR_PROMPT],
-					messages: [
-						...priorMessages,
-						{
-							role: "user",
-							content: aggregatorInput,
-							timestamp: Date.now(),
-						},
-					],
-				},
-				streamOptionsFor(aggregator.model, options?.signal),
-			);
-
-			if (aggregatorResult.stopReason === "aborted") {
-				handlerStream.fail("aborted", "Fusion-fast: cancelled during aggregation.");
-				return;
-			}
-
-			if (aggregatorResult.stopReason === "error") {
-				handlerStream.fail(
-					"error",
-					`Fusion-fast aggregator call failed: ${aggregatorResult.errorMessage ?? "stopReason=error"}`,
-				);
-				return;
-			}
-
-			const finalText = extractAnswerText(aggregatorResult);
-			if (finalText === "") {
-				handlerStream.fail(
-					"error",
-					"Fusion-fast aggregator returned an empty answer.",
-				);
-				return;
-			}
+			const result = await runAggregator({
+				pipeline: "Fusion-fast",
+				aggregator,
+				systemPrompt: FUSION_AGGREGATOR_PROMPT,
+				aggregatorInput,
+				priorMessages,
+				outerOptions: options,
+				roleThinking: FUSION_AGGREGATOR_THINKING,
+				handlerStream,
+				progressLine: "Fusion-fast: aggregator integrating...",
+			});
+			if (!result) return;
 
 			handlerStream.finish(
-				finalText,
-				sumUsage([...innerUsages, aggregatorResult.usage]),
+				result.text,
+				sumUsage([...proposals.map((p) => p.usage), result.usage]),
 			);
 		} catch (err) {
-			handlerStream.fail(
-				"error",
-				err instanceof Error ? err.message : String(err),
-			);
+			handlerStream.fail("error", err instanceof Error ? err.message : String(err));
 		}
 	})();
 

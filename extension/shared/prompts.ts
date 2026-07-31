@@ -13,6 +13,7 @@
 // Probe both candidate roots at load time and use whichever actually exists.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseReasoningEffort, type ReasoningEffort } from "./models";
 
 const AGENT_FILENAMES = {
 	fusionAggregator: "fusion-aggregator.md",
@@ -41,13 +42,32 @@ function stripFrontmatter(raw: string): string {
 	return (match ? raw.slice(match[0].length) : raw).trim();
 }
 
-function readAgentPrompt(filename: string): string {
-	return stripFrontmatter(readFileSync(join(AGENTS_DIR, filename), "utf8"));
+/** Extract the raw frontmatter block (between the leading `---` fences); empty when absent. */
+function frontmatterBlock(raw: string): string {
+	const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(raw);
+	return match?.[1] ?? "";
 }
 
-export const FUSION_PROPOSER_PROMPT = readAgentPrompt(AGENT_FILENAMES.fusionProposer);
-export const FUSION_AGGREGATOR_PROMPT = readAgentPrompt(AGENT_FILENAMES.fusionAggregator);
+function readAgentFile(filename: string): { prompt: string; thinkingLevel: ReasoningEffort | undefined } {
+	const raw = readFileSync(join(AGENTS_DIR, filename), "utf8");
+	const levelMatch = /^thinkingLevel:\s*(\S+)\s*$/m.exec(frontmatterBlock(raw));
+	return { prompt: stripFrontmatter(raw), thinkingLevel: parseReasoningEffort(levelMatch?.[1]) };
+}
 
-export const ULTRAFUSION_PROPOSER_PROMPT = readAgentPrompt(AGENT_FILENAMES.ultrafusionProposer);
-export const ULTRAFUSION_CRITIC_PROMPT = readAgentPrompt(AGENT_FILENAMES.ultrafusionCritic);
-export const ULTRAFUSION_AGGREGATOR_PROMPT = readAgentPrompt(AGENT_FILENAMES.ultrafusionAggregator);
+const fusionProposer = readAgentFile(AGENT_FILENAMES.fusionProposer);
+const fusionAggregator = readAgentFile(AGENT_FILENAMES.fusionAggregator);
+const ultrafusionProposer = readAgentFile(AGENT_FILENAMES.ultrafusionProposer);
+const ultrafusionCritic = readAgentFile(AGENT_FILENAMES.ultrafusionCritic);
+const ultrafusionAggregator = readAgentFile(AGENT_FILENAMES.ultrafusionAggregator);
+
+export const FUSION_PROPOSER_PROMPT = fusionProposer.prompt;
+export const FUSION_PROPOSER_THINKING = fusionProposer.thinkingLevel;
+export const FUSION_AGGREGATOR_PROMPT = fusionAggregator.prompt;
+export const FUSION_AGGREGATOR_THINKING = fusionAggregator.thinkingLevel;
+
+export const ULTRAFUSION_PROPOSER_PROMPT = ultrafusionProposer.prompt;
+export const ULTRAFUSION_PROPOSER_THINKING = ultrafusionProposer.thinkingLevel;
+export const ULTRAFUSION_CRITIC_PROMPT = ultrafusionCritic.prompt;
+export const ULTRAFUSION_CRITIC_THINKING = ultrafusionCritic.thinkingLevel;
+export const ULTRAFUSION_AGGREGATOR_PROMPT = ultrafusionAggregator.prompt;
+export const ULTRAFUSION_AGGREGATOR_THINKING = ultrafusionAggregator.thinkingLevel;
