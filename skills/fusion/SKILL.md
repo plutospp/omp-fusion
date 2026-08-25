@@ -117,17 +117,14 @@ const judgeModel = "pi/fusion_judge";
 
 const panelBrief = [
   "You are ONE independent panelist answering the task below entirely on your own.",
-  "You do not know whether anyone else is answering it; never reference other panelists or a synthesizer.",
-  "Answer completely and self-containedly; use web search + bash to verify. No personas/lenses.",
-  "Return ONLY your final answer (for artifacts, include how you verified them).",
+  "Default to read-only. Do not spawn further subagents.",
 ].join("\n");
 
 const judgeRubric = [
-  "You are the Fusion judge. You did not write these answers; do not vote or average.",
-  "First classify the deliverable. Artifact/code -> Track A: run each candidate with bash, keep the",
-  "working parts, merge into one artifact, run+fix it, give a brief merge rationale.",
-  "Research/analysis -> Track B: write Consensus / Contradictions / Partial coverage / Unique insights /",
-  "Blind spots, then the Final answer grounded in them. Lead with the answer, not a preamble.",
+  "You are the Fusion judge.",
+  "Give output based on the context and results of the last layer.",
+  "You may write or edit files and spawn further subagents.",
+  "If the context window limit is exceeded, use simple context truncation from the beginning.",
 ].join("\n");
 
 // parallel + agent are async — await. The bundled `task` agent has full tools; model override wins.
@@ -187,9 +184,7 @@ Apply these to every panel (default and plugin modes):
   compare: return the single answer directly with a one-line note that the panel degraded (the judge
   only adds value across ≥ 2 independent answers). This is distinct from `/fusion-solo`, which is two
   cold runs of the *same* model — a real 2-panelist comparison.
-- **Guard the judge's context.** Before the judge, truncate each panel answer to roughly
-  `judge_context_window / (2 × N_successful)` bytes (append a `[truncated for judge]` marker). A large
-  panel of long answers can otherwise overflow the judge.
+- **Guard the judge's context.** Before the judge, if the context window limit is exceeded, use simple context truncation from the beginning.
 - **Track A writes are isolated.** Artifact/code panelists default to **read-only** tools. If they must
   write, give each its own scratch dir (or serialize them) — never let parallel panelists write to a
   shared cwd, or they clobber each other.
